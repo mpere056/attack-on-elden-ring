@@ -23,6 +23,8 @@
     <Reference Include="0Harmony" HintPath="$(BepCore)\0Harmony.dll" Private="false" />
     <Reference Include="Il2Cppmscorlib" HintPath="$(Interop)\Il2Cppmscorlib.dll" Private="false" />
     <Reference Include="UnityEngine.CoreModule" HintPath="$(Interop)\UnityEngine.CoreModule.dll" Private="false" />
+    <Reference Include="UnityEngine.ScreenCaptureModule" HintPath="$(Interop)/UnityEngine.ScreenCaptureModule.dll" Private="false" />
+    <Reference Include="UnityEngine.InputLegacyModule" HintPath="$(Interop)\UnityEngine.InputLegacyModule.dll" Private="false" />
     <Reference Include="UnityEngine.PhysicsModule" HintPath="$(Interop)\UnityEngine.PhysicsModule.dll" Private="false" />
     <Reference Include="Scripts" HintPath="$(Interop)\Scripts.dll" Private="false" />
     <Reference Include="Photon3Unity3D" HintPath="$(Interop)\Photon3Unity3D.dll" Private="false" />

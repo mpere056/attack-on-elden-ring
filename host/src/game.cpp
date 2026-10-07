@@ -72,6 +72,22 @@ constexpr size_t kChrTeamType = 0x6C;         // 6 enemy, 7 strong enemy/boss (T
 // modules
 constexpr size_t kModData = 0x00;
 constexpr size_t kModPhysics = 0x68;
+// From fromsoftware-rs (ChrInsModuleContainer, CSChrTimeActModule, CSChrEventModule), cross-checked:
+// its physics entry (0x68) matches kModPhysics above. Every module's +0x08 is its owner ChrIns*.
+constexpr size_t kModTimeAct = 0x18;
+constexpr size_t kModEvent = 0x58;
+constexpr size_t kTimeActQueue = 0x20;      // 10 x {i32 anim_id, f32 play_time, f32, f32 anim_length}
+constexpr size_t kTimeActReadIdx = 0xC4;    // index of the last animation played
+constexpr size_t kEventRequestAnim = 0x18;  // i32: animation to play next frame (event override)
+constexpr size_t kEventIdleAnim = 0x1C;     // i32: default idle animation
+// Also from fromsoftware-rs, cross-checked against the physics offsets above (0x50 orientation,
+// 0x70 position, 0x91 proxy update all match): playing from Elden Ring's window.
+constexpr size_t kModBehavior = 0x28;
+constexpr size_t kModFall = 0x70;
+constexpr size_t kBehaviorAnimSpeed = 0x17C8;  // f32 CSChrBehaviorModule.animation_speed
+constexpr size_t kPhysMotionMult = 0x1C4;     // f32: how far animations move the character
+constexpr size_t kPhysIsFalling = 0x1D0;      // bool
+constexpr size_t kFallTimer = 0x18;           // f32 CSChrFallModule.fall_timer
 // CSChrDataModule
 constexpr size_t kDataHp = 0x138;
 constexpr size_t kDataMaxHp = 0x13C;
@@ -975,6 +991,73 @@ static void update_passages(bool standing, void* ignore) {
     }
 }
 
+// A ChrIns module by its slot in the module container, only if it points back at its owner.
+static uint8_t* chr_module(uint8_t* ins, size_t slot) {
+    if (!ins || !mem_readable(ins + kChrModules, 8)) return nullptr;
+    uint8_t* mods = *(uint8_t**)(ins + kChrModules);
+    if (!mods || !mem_readable(mods + slot, 8)) return nullptr;
+    uint8_t* m = *(uint8_t**)(mods + slot);
+    if (!m || !mem_readable(m, 0x100) || *(uint8_t**)(m + 8) != ins) return nullptr;
+    return m;
+}
+
+// The animation the character is playing (time-act module's current queue entry), or -1.
+static int32_t current_anim(uint8_t* ins) {
+    uint8_t* ta = chr_module(ins, kModTimeAct);
+    if (!ta) return -1;
+    uint32_t idx = *(uint32_t*)(ta + kTimeActReadIdx);
+    if (idx >= 10) return -1;
+    return *(int32_t*)(ta + kTimeActQueue + idx * 16);
+}
+
+// Tarnished mode: AoTTG2 asks for an animation (control.requestAnim) and the event module's
+// override plays it, the way Elden Ring's own scripts force animations. Only re-requested when the
+// character isn't already playing it, so a loop restarts when it ends instead of every frame.
+static int32_t g_animAsked = 0;
+static void drive_animation(uint8_t* ins, const ErmcControl* c) {
+    if (c->requestAnim < 0) return;
+    uint8_t* ev = chr_module(ins, kModEvent);
+    if (!ev) return;
+    int32_t cur = current_anim(ins);
+    int32_t want = c->requestAnim;
+    if (want == 0) {
+        // Back to idle, once, if we were the ones who started the current animation.
+        if (g_animAsked != 0 && cur == g_animAsked) *(int32_t*)(ev + kEventRequestAnim) = *(int32_t*)(ev + kEventIdleAnim);
+        g_animAsked = 0;
+        return;
+    }
+    if (cur != want) {
+        *(int32_t*)(ev + kEventRequestAnim) = want;
+        if (want != g_animAsked) log("anim: playing %d (was %d)", want, cur);
+    }
+    g_animAsked = want;
+}
+
+// Playing from Elden Ring's window: animations without their own displacement (the position is
+// ours), sped up to the hero's speed so the feet match, and the falling state in the air.
+static bool g_feelApplied = false;
+static void game_input_feel(const Player& p, const ErmcControl* c, bool gameInput, bool airborne) {
+    uint8_t* beh = chr_module(p.ins, kModBehavior);
+    uint8_t* fall = chr_module(p.ins, kModFall);
+    if (!gameInput) {
+        if (g_feelApplied) {
+            *(float*)(p.phys + kPhysMotionMult) = 1.0f;
+            if (beh && mem_readable(beh + kBehaviorAnimSpeed, 4)) *(float*)(beh + kBehaviorAnimSpeed) = 1.0f;
+            g_feelApplied = false;
+        }
+        return;
+    }
+    if (!g_feelApplied) log("feel: playing from Elden Ring's window (motion x0, animation speed from AoTTG2)");
+    g_feelApplied = true;
+    *(float*)(p.phys + kPhysMotionMult) = 0.0f;
+    float speed = (c->animSpeed > 0.05f && c->animSpeed < 8.0f) ? c->animSpeed : 1.0f;
+    if (beh && mem_readable(beh + kBehaviorAnimSpeed, 4)) *(float*)(beh + kBehaviorAnimSpeed) = airborne ? 1.0f : speed;
+    if (airborne) {
+        *(uint8_t*)(p.phys + kPhysIsFalling) = 1;
+        if (fall && mem_readable(fall + kFallTimer, 4)) *(float*)(fall + kFallTimer) = 0.0f;  // no "fell too far"
+    }
+}
+
 static void stand_in(const Player& p, const ErmcControl* c, bool active) {
     if (g_standPlayer && g_standPlayer != p.ins) {
         g_putHavokValid = false;
@@ -1011,6 +1094,11 @@ static void stand_in(const Player& p, const ErmcControl* c, bool active) {
         g_reachBlock = 0xFFFFFFFFu;
         g_reachOffset[0] = g_reachOffset[1] = g_reachOffset[2] = 0;
         g_reachTarget = -1;
+        if (g_feelApplied) {
+            ErmcControl none;
+            memset(&none, 0, sizeof(none));
+            game_input_feel(p, &none, false, false);
+        }
         if (g_standing) {
             release_player(p.ins, p.data, p.phys);
             log("stand-in: released the player");
@@ -1027,7 +1115,18 @@ static void stand_in(const Player& p, const ErmcControl* c, bool active) {
         log("stand-in: the player now follows Steve");
     }
     g_lastStandMs = now_ms();
-    *(uint32_t*)(p.ins + kChrDebugFlags) |= (1u << 5);  // NoMove: ignore the game's own input
+    // NoMove: ignore the game's own input. In Tarnished mode (virtual pad) the game's movement stays
+    // on so its locomotion animates the Tarnished; the position below still pins it every tick.
+    // Only once Elden Ring really reads the virtual pad (input.cpp); until then the old puppet
+    // behaviour (NoMove, facing written) keeps the Tarnished turning with the hero.
+    bool padMode = (c->flags & ERMC_CTRL_VIRTUAL_PAD) != 0 && input_pad_active();
+    // Playing from Elden Ring's window: its own locomotion animates the Tarnished on the ground. In the
+    // air it would keep running on the spot, so there the game's movement is off and it is "falling".
+    bool gameInput = (c->flags & ERMC_CTRL_GAME_INPUT) != 0;
+    bool airborne = (c->flags & ERMC_CTRL_AIRBORNE) != 0;
+    padMode = padMode || (gameInput && !airborne);
+    if (padMode) *(uint32_t*)(p.ins + kChrDebugFlags) &= ~(1u << 5);
+    else *(uint32_t*)(p.ins + kChrDebugFlags) |= (1u << 5);
     p.phys[kPhysGravityOff] = 1;
     p.data[kDataFlags] |= 1u;                            // NoDead
 
@@ -1049,8 +1148,14 @@ static void stand_in(const Player& p, const ErmcControl* c, bool active) {
     // Match the player's heading, including the reach-assisted facing toward a door.
     float theta = squared ? faceTheta : player_yaw_from_minecraft(c->hunterYawDeg);
     float q[4] = {0.0f, sinf(theta * 0.5f), 0.0f, cosf(theta * 0.5f)};
-    memcpy(p.phys + kPhysQuat, q, 16);
-    memcpy(p.phys + kPhysQuatInterp, q, 16);
+    // Facing: always ours when playing from Elden Ring's window. Elden Ring turns toward its input
+    // relative to its own (hidden) camera, which is not the AoTTG2 camera we render from.
+    if (!padMode || gameInput) {
+        memcpy(p.phys + kPhysQuat, q, 16);
+        memcpy(p.phys + kPhysQuatInterp, q, 16);
+    }
+    drive_animation(p.ins, c);
+    game_input_feel(p, c, gameInput, airborne);
 
     int hp = *(int*)(p.data + kDataHp), mx = *(int*)(p.data + kDataMaxHp);
     // NoDead turns lethal damage into "1 HP left". Once, that is a big hit (Minecraft decides
@@ -2473,6 +2578,18 @@ void game_fill_state(ErmcGameState* st) {
     else if (g_life != LIFE_ALIVE && g_lastAliveMs && now - g_lastAliveMs < 60000) st->flags |= ERMC_STATE_HOST_BUSY;
     if (!g_frame.valid || g_life != LIFE_ALIVE) return;
     st->stageId = g_frame.zone;
+    {
+        Player ap;
+        st->animId = -1;
+        st->animRequest = st->idleAnimId = 0;
+        if (get_player(&ap)) {
+            st->animId = current_anim(ap.ins);
+            if (uint8_t* ev = chr_module(ap.ins, kModEvent)) {
+                st->animRequest = *(int32_t*)(ev + kEventRequestAnim);
+                st->idleAnimId = *(int32_t*)(ev + kEventIdleAnim);
+            }
+        }
+    }
     st->supportEpoch = g_supportEpoch;
     if (g_supportValid) {
         st->flags |= ERMC_STATE_SUPPORT_VALID;

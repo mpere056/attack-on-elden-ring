@@ -169,7 +169,10 @@ typedef struct ErmcGameState {
     uint32_t supportEpoch;        /* 0x100 changes when support contact is lost or reacquired */
     float supportTravelY;         /* 0x104 cumulative vertical motion at the same support point */
     float supportPos[3];          /* 0x108 current floor position, stable frame */
-} ErmcGameState;                  /* 0x114 */
+    int32_t animId;               /* 0x114 AoER: animation the Tarnished is playing (CSChrTimeActModule), -1 unknown */
+    int32_t animRequest;          /* 0x118 CSChrEventModule.request_animation_id right now */
+    int32_t idleAnimId;           /* 0x11C CSChrEventModule.idle_anim_id */
+} ErmcGameState;                  /* 0x120 */
 
 /* ErmcControl.flags */
 #define ERMC_CTRL_OVERRIDE_CAMERA (1u << 0) /* drive the ER camera from camPos/camTarget/fov */
@@ -182,6 +185,15 @@ typedef struct ErmcGameState {
 #define ERMC_CTRL_NO_RELIGHT      (1u << 7) /* debug: no ER lighting on Minecraft pixels */
 #define ERMC_CTRL_GROUNDED        (1u << 8) /* Minecraft stands on terrain, not flying or jumping */
 #define ERMC_CTRL_FLYING          (1u << 9) /* creative/spectator flight: do not track a platform */
+#define ERMC_CTRL_VIRTUAL_PAD     (1u << 10) /* AoER Tarnished mode: stickX/Y and padButtons feed a virtual
+                                               * controller; the stand-in leaves the game's own movement on
+                                               * (no NoMove) so Elden Ring animates the Tarnished */
+#define ERMC_CTRL_CROSSHAIR       (1u << 11) /* AoER: draw a crosshair at the screen centre (aimDist > 0: green) */
+#define ERMC_CTRL_GAME_INPUT      (1u << 12) /* AoER: Elden Ring has the focus and reads the player's input:
+                                               * keep its own movement on (no NoMove, no facing write) so it
+                                               * animates the Tarnished; the position is still pinned */
+#define ERMC_CTRL_AIRBORNE        (1u << 13) /* AoER: AoTTG2's hero is in the air (jump, ODM): falling state, no
+                                               * ground locomotion from Elden Ring's input */
 
 typedef struct ErmcControl {
     volatile uint32_t seq;        /* 0x00 seqlock */
@@ -200,7 +212,13 @@ typedef struct ErmcControl {
     float hunterYawDeg;           /* 0x58 hunter facing (Minecraft yaw, degrees) when MOVE_HUNTER */
     uint32_t supportEpoch;        /* 0x5C support contact used by this pose */
     float supportTravelY;         /* 0x60 platform travel already included in hunterPos */
-} ErmcControl;                    /* 0x64 */
+    float stickX;                 /* 0x64 AoER virtual pad: left stick, -1..1, camera-relative right */
+    float stickY;                 /* 0x68 left stick, -1..1, camera-relative forward */
+    uint32_t padButtons;          /* 0x6C XInput button bits held on the virtual pad */
+    float aimDist;                /* 0x70 AoER crosshair: distance to the hookable surface at the centre, 0 = none */
+    int32_t requestAnim;          /* 0x74 AoER Tarnished mode: animation to play (> 0), 0 = back to idle, -1 = leave alone */
+    float animSpeed;              /* 0x78 AoER: Tarnished animation speed (hero speed / Elden Ring's run speed), 0 = 1 */
+} ErmcControl;                    /* 0x7C */
 
 /* Hits taken by the hunter while it stands in for the Minecraft player (MOVE_HUNTER):
  * monotonic counters, so Minecraft applies the difference since its last read. */
@@ -413,8 +431,10 @@ typedef struct ErmcFrameHeader {
 
 #ifdef __cplusplus
 static_assert(sizeof(ErmcHeader) == 0xC0, "header size");
-static_assert(sizeof(ErmcGameState) == 0x114, "state size");
-static_assert(sizeof(ErmcControl) == 0x64, "control size");
+static_assert(sizeof(ErmcGameState) == 0x120, "state size");
+static_assert(ERMC_OFF_STATE + sizeof(ErmcGameState) <= ERMC_OFF_CONTROL, "state fits");
+static_assert(sizeof(ErmcControl) == 0x7C, "control size");
+static_assert(ERMC_OFF_CONTROL + sizeof(ErmcControl) <= ERMC_OFF_HUNTER, "control fits");
 static_assert(sizeof(ErmcHunterEvents) == 0x30, "hunter events size");
 static_assert(sizeof(ErmcCmdBlock) == 0x1000, "cmd size");
 static_assert(sizeof(ErmcRayHeader) == 0x20, "ray header size");

@@ -65,6 +65,7 @@ namespace Aoer
                 if (!stateOk) { Plugin.L.LogWarning("link: F7 ignored, no Tarnished standing in the world"); return; }
                 if (hero == null) { Plugin.L.LogWarning("link: F7 ignored, spawn a soldier in AoTTG2 first"); return; }
                 _lifeAtLink = Bridge.HostLife;
+                if (Plugin.Instance != null) Plugin.ReloadSettings(Plugin.Instance.Config);
                 _phase = Phase.Preparing;
                 _prepStart = Time.unscaledTime;
                 TerrainMirror.Begin();
@@ -158,6 +159,95 @@ namespace Aoer
                                 $"{er.x:F1} {er.z:F1}; put back on top");
         }
 
+        private static void StartCompositing(Component hero, HostState s)
+        {
+            int w = s.BackW > 0 ? (int)s.BackW : s.WinW, h = s.BackH > 0 ? (int)s.BackH : s.WinH;
+            if (!Compositor.Begin(hero, w, h)) Plugin.L.LogWarning("link: compositing unavailable; the Tarnished stays visible");
+        }
+
+        // The hero's ground movement as a left-stick position relative to the camera (which Elden Ring
+        // renders from, so its locomotion moves the Tarnished the same way). Elden Ring walks at a light
+        // tilt and runs at full tilt; above ~5 m/s it is a full tilt. In the air: centred, for now.
+        private static void Stick(Component hero, Vector3 camForward, out float sx, out float sy)
+        {
+            sx = sy = 0f;
+            var character = hero.TryCast<Characters.BaseCharacter>();
+            if (character != null && !character.Grounded) return;
+            var rb = hero.GetComponent<Rigidbody>();
+            Vector3 v = rb != null ? rb.velocity : _velocity;
+            v.y = 0f;
+            float speed = v.magnitude;
+            if (speed < 0.5f) return;
+            Vector3 f = camForward; f.y = 0f;
+            if (f.sqrMagnitude < 1e-4f) return;
+            f.Normalize();
+            Vector3 r = Vector3.Cross(Vector3.up, f);
+            Vector3 d = v / speed;
+            float tilt = Mathf.Clamp(0.35f + (speed - 0.5f) / 4.5f * 0.65f, 0.35f, 1f);
+            sx = Vector3.Dot(d, r) * tilt;
+            sy = Vector3.Dot(d, f) * tilt;
+            StickTilt = tilt;
+        }
+
+        // What a hook fired at the screen centre would catch: AoTTG2's camera is Elden Ring's camera,
+        // so the centre of Elden Ring's screen is AoTTG2's aim. Tested against the collision copy and
+        // the enemy boxes (same layer). 0 = nothing within reach.
+        private const float HookReach = 120f;
+        private static float AimDistance(Transform cam)
+        {
+            RaycastHit hit;
+            if (Physics.Raycast(cam.position, cam.forward, out hit, HookReach, 1 << TerrainMirror.Layer, QueryTriggerInteraction.Ignore))
+                return Mathf.Max(hit.distance, 0.01f);
+            return 0f;
+        }
+
+        // ODM cables: from the hero's waist (a little to each side) to every hook that is flying or
+        // attached, projected onto Elden Ring's screen.
+        private static readonly System.Collections.Generic.List<CableOverlay.Segment> _cables = new();
+        private static CableOverlay.Segment[] Cables(Component hero, Transform cam, Vector3 eye, float fov, int w, int h)
+        {
+            _cables.Clear();
+            var human = hero.TryCast<Characters.Human>();
+            if (human == null) return Array.Empty<CableOverlay.Segment>();
+            Transform ht = hero.transform;
+            Vector3 waist = ht.position + Vector3.up * 1.0f;
+            AddCable(human.HookLeft, waist - ht.right * 0.25f, cam, eye, fov, w, h);
+            AddCable(human.HookRight, waist + ht.right * 0.25f, cam, eye, fov, w, h);
+            return _cables.ToArray();
+        }
+
+        private static void AddCable(Characters.HookUseable hooks, Vector3 from, Transform cam, Vector3 eye, float fov, int w, int h)
+        {
+            try
+            {
+                if (hooks == null || !(hooks.IsHooking() || hooks.IsHooked())) return;
+                Vector3 to = hooks.GetHookPosition();
+                if (CableOverlay.Project(eye, cam, fov, w, h, from, out float x0, out float y0) &&
+                    CableOverlay.Project(eye, cam, fov, w, h, to, out float x1, out float y1))
+                    _cables.Add(new CableOverlay.Segment { X0 = x0, Y0 = y0, X1 = x1, Y1 = y1 });
+            }
+            catch (Exception) { }
+        }
+
+        // How far behind the hero's head Elden Ring's view sits while linked (config CameraDistance).
+        public static float CameraDistance = 4.0f;
+        private static float _xhX = -1f, _xhY = -1f;  // smoothed crosshair position
+        private const float PivotHeight = 1.6f;   // the head, roughly, above the hero's feet
+
+        // Behind the head along AoTTG2's view direction, pulled in if Elden Ring's collision (the copy)
+        // is in the way, so the camera doesn't end up inside a wall or under the ground.
+        private static Vector3 FollowEye(Transform cam, Component hero)
+        {
+            Vector3 pivot = hero.transform.position + Vector3.up * PivotHeight;
+            Vector3 back = -cam.forward;
+            float dist = CameraDistance;
+            RaycastHit hit;
+            if (Physics.Raycast(pivot, back, out hit, dist, 1 << TerrainMirror.Layer, QueryTriggerInteraction.Ignore))
+                dist = Mathf.Max(0.4f, hit.distance - 0.25f);
+            return pivot + back * dist;
+        }
+
+        public static float StickTilt;
         public static int Rescues;
         public static bool CameraSync = true;
 
@@ -167,6 +257,13 @@ namespace Aoer
             bool wasLinked = _phase == Phase.Linked;
             _phase = Phase.Off;
             Bridge.WriteControl(0, 0, 0, 0, 0);
+            CrosshairWindow.Hide();
+            _xhX = _xhY = -1f;
+            CableOverlay.Hide();
+            TarnishedAnim.Reset();
+            GroundSpeed.RestoreRunSpeed();
+            OdmPace.Restore();
+            Compositor.End();
             LongHooks.End();
             TerrainMirror.End();
             EnemyProxies.End();
@@ -179,14 +276,59 @@ namespace Aoer
             Vector3 p = hero.transform.position;
             Vector3 e = p - _offset;
             // Elden Ring renders from AoTTG2's camera, so what you see matches how you steer.
-            uint flags = Protocol.CtrlMoveHunter | Protocol.CtrlFlying;
+            // Tarnished mode: Elden Ring animates the Tarnished from a virtual stick (host input.cpp).
+            uint flags = Protocol.CtrlMoveHunter | Protocol.CtrlFlying | Protocol.CtrlVirtualPad;
+            // Crosshair: our own small overlay window (CrosshairWindow), not drawn by Elden Ring.
+            // Playing from Elden Ring's window: its own movement (and animations) stay on.
+            if (BackgroundInput.Active) flags |= Protocol.CtrlGameInput;
+            bool inAir = !_puppet && TarnishedAnim.InAir(hero);
+            if (inAir) flags |= Protocol.CtrlAirborne;
+            Bridge.ReadState(out var animState);
+            BackgroundInput.AirJump(inAir, animState.AnimId);
+            GroundSpeed.ElderAnim = animState.AnimId;
+            if (!_puppet) OdmPace.Update(hero);
+            if (!_puppet) GroundSpeed.SetRunSpeed(hero);
+            // While AoTTG2's soldier is drawn into Elden Ring, the gliding Tarnished is hidden.
+            if (Compositor.Active) flags |= Protocol.CtrlComposite | Protocol.CtrlHideHunter;
             var cam = Camera.main;
             if (cam != null && CameraSync)
             {
                 flags |= Protocol.CtrlOverrideCamera;
                 Transform t = cam.transform;
-                Vector3 eye = t.position - _offset;
-                Bridge.WriteControl(flags, e.x, e.y, e.z, hero.transform.eulerAngles.y, eye, eye + t.forward, t.up, cam.fieldOfView);
+                // Elden Ring's own kind of follow camera: AoTTG2's view direction (so the mouse still steers),
+                // but placed behind the hero's head at CameraDistance and centred on it, the way Elden Ring
+                // frames the Tarnished. (AoTTG2's camera looks over the hero at the aim point, which put the
+                // Tarnished at the bottom edge of the screen.)
+                Vector3 unityEye = FollowEye(t, hero);
+                Vector3 eye = unityEye - _offset;
+                Stick(hero, t.forward, out float sx, out float sy);
+                float aim = _puppet ? 0f : AimDistance(t);
+                if (!_puppet && Bridge.ReadState(out var hs) && hs.WinW > 0 && hs.WinH > 0)
+                {
+                    // AoTTG2 aims from its own camera, not from the follow camera: draw the crosshair where that
+                    // aim lands on Elden Ring's screen (the hit, or a point far along the aim if nothing is hit).
+                    Vector3 aimPoint = t.position + t.forward * (aim > 0f ? aim : HookReach);
+                    if (!CableOverlay.Project(unityEye, t, cam.fieldOfView, hs.WinW, hs.WinH, aimPoint, out float ax, out float ay))
+                    {
+                        ax = hs.WinW * 0.5f; ay = hs.WinH * 0.5f;
+                    }
+                    // Smoothed: the raw point twitches as the aim hops between near and far surfaces and the
+                    // two cameras update a frame apart. ~40 ms to follow, big jumps (a new target) at once.
+                    float k = 1f - Mathf.Exp(-Time.unscaledDeltaTime / 0.04f);
+                    if (_xhX < 0f || Mathf.Abs(ax - _xhX) > 120f || Mathf.Abs(ay - _xhY) > 120f) { _xhX = ax; _xhY = ay; }
+                    else { _xhX += (ax - _xhX) * k; _xhY += (ay - _xhY) * k; }
+                    CrosshairWindow.Show(hs.WinX + Mathf.RoundToInt(_xhX), hs.WinY + Mathf.RoundToInt(_xhY), aim > 0f);
+                    CableOverlay.Set(hs.WinX, hs.WinY, hs.WinW, hs.WinH, Cables(hero, t, unityEye, cam.fieldOfView, hs.WinW, hs.WinH));
+                }
+                else
+                {
+                    CrosshairWindow.Hide();
+                    CableOverlay.Hide();
+                }
+                // The event-animation route doesn't play locomotion (MODLOG); kept for the log only.
+                TarnishedAnim.Pick(hero);
+                int anim = -1;
+                Bridge.WriteControl(flags, e.x, e.y, e.z, hero.transform.eulerAngles.y, eye, eye + t.forward, t.up, cam.fieldOfView, sx, sy, 0, aim, anim, TarnishedAnim.Speed(hero));
             }
             else
             {
@@ -209,7 +351,7 @@ namespace Aoer
                 string line = $"link: hero at ER {e.x,9:F2} {e.y,8:F2} {e.z,9:F2} yaw {hero.transform.eulerAngles.y,5:F0} speed {_velocity.magnitude,5:F1}; " +
                               $"Tarnished reported at {s.PX,9:F2} {s.PY,8:F2} {s.PZ,9:F2}; tiles {TerrainMirror.TileCount}, " +
                               $"batches {TerrainMirror.Batches} (last {TerrainMirror.LastBatchMs:F0} ms), wall panels {WallProbe.Panels}, enemies {EnemyProxies.Count}, " +
-                              $"long hooks {LongHooks.Fired} fired / {LongHooks.Anchored} anchored (last {LongHooks.LastDistance:F0} m) / {LongHooks.Missed} missed";
+                              $"anim {TarnishedAnim.Current} (Elden Ring {s.AnimId}, jumps pressed {BackgroundInput.JumpsPressed}, hero jumps lowered {GroundSpeed.Jumps}), long hooks {LongHooks.Fired} fired / {LongHooks.Anchored} anchored (last {LongHooks.LastDistance:F0} m) / {LongHooks.Missed} missed";
                 Plugin.L.LogInfo(line);
             }
         }

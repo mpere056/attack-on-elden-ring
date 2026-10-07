@@ -7,6 +7,7 @@
     python tools/erctl.py reload        swap in a freshly built dist/aoer_core.dll without restarting
     python tools/erctl.py testpattern on|off   compositor check: checkerboard in the top-left corner
     python tools/erctl.py shot          screenshot of the Elden Ring window into runtime/
+    python tools/erctl.py anim          record which animation the Tarnished plays, with its speed
 
 Milestone 1 uses `aim` and `reach` to measure how far away Elden Ring has collision loaded,
 which decides how far ODM hooks can reach. Rays use Elden Ring's terrain filter: map geometry
@@ -274,11 +275,43 @@ def cmd_shot(m):
     print(f'saved {out} ({w}x{h} at {x},{y})')
 
 
+def cmd_anim(m):
+    """Tarnished mode research: every animation change with the speed it happened at. Play Elden Ring
+    normally (not linked): stand, walk, run, sprint, jump, fall, roll. Saved to runtime/anim-*.csv."""
+    out = ROOT / 'runtime' / f'anim-{datetime.now():%Y%m%d-%H%M%S}.csv'
+    out.parent.mkdir(exist_ok=True)
+    print(f'Recording to {out.name}. Play normally; Ctrl+C to stop.')
+    last_id, last_pos, last_t = None, None, None
+    speeds = []
+    with out.open('w', newline='') as f:
+        w = csv.writer(f)
+        w.writerow(['time', 'anim', 'idle_anim', 'ground_speed', 'vertical_speed'])
+        while True:
+            s = state(m)
+            blob = bytes(m[OFF_STATE + 0x114:OFF_STATE + 0x120])
+            anim, req, idle = struct.unpack('<3i', blob)
+            now = time.time()
+            p = s['player']
+            if last_pos is not None and now > last_t:
+                dt = now - last_t
+                speeds.append((math.hypot(p[0] - last_pos[0], p[2] - last_pos[2]) / dt, (p[1] - last_pos[1]) / dt))
+                speeds = speeds[-6:]
+            last_pos, last_t = p, now
+            if s['player_valid'] and anim != last_id:
+                gs = sum(a for a, b in speeds) / len(speeds) if speeds else 0
+                vs = sum(b for a, b in speeds) / len(speeds) if speeds else 0
+                print(f'{datetime.now():%H:%M:%S.%f}'[:-3] + f'  anim {anim:8d}  ground {gs:5.1f} m/s  vertical {vs:+5.1f} m/s  (idle anim {idle})')
+                w.writerow([f'{now:.3f}', anim, idle, f'{gs:.2f}', f'{vs:.2f}'])
+                f.flush()
+                last_id = anim
+            time.sleep(1 / 30)
+
+
 def main():
     sys.stdout.reconfigure(line_buffering=True)
     cmd = sys.argv[1] if len(sys.argv) > 1 else 'status'
     fn = {'status': cmd_status, 'aim': cmd_aim, 'reach': cmd_reach, 'survey': cmd_survey,
-          'reload': cmd_reload, 'testpattern': cmd_testpattern, 'shot': cmd_shot}.get(cmd)
+          'reload': cmd_reload, 'testpattern': cmd_testpattern, 'shot': cmd_shot, 'anim': cmd_anim}.get(cmd)
     if not fn:
         sys.exit(__doc__)
     m = open_bridge()

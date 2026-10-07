@@ -85,6 +85,11 @@ void compositor_shutdown();  // step 2: release D3D12 objects
 void compositor_note_applied_pose(uint64_t poseId);  // camera task: the pose this game frame uses
 bool compositor_active();
 
+// input.cpp: virtual controller for Tarnished mode (XInputGetState hook).
+bool input_init();
+bool input_pad_active();
+void input_poll();  // worker thread: input diagnostics
+
 // core.cpp: number of threads currently inside one of our detours. The loader only
 // unloads the core once this drops to zero.
 extern volatile LONG g_inflight;

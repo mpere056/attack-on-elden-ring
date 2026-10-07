@@ -235,7 +235,7 @@ cbuffer Params : register(b0) {
     float hostReversed; float useDepth; float debugView; float bias;
     float relight; float lightGain; float lightMin; float fogStrength;
     float fogStart; float fogEnd; float tintAmount; float testPattern;
-    float handLayer; float swapRB; float pad1; float pad2;
+    float handLayer; float swapRB; float pad1; float pad2;  // pad1: crosshair on, pad2: target in range
 };
 struct VSOut { float4 pos : SV_Position; float2 uv : TEXCOORD0; };
 VSOut VS(uint id : SV_VertexID) {
@@ -273,7 +273,21 @@ float3 lightAt(float2 uv) {
     float k = clamp(lightMin + lum * lightGain, 0.0, 1.15);
     return k * lerp(float3(1, 1, 1), tint * 2.0, tintAmount);
 }
+// AoER crosshair: four ticks and a dot at the screen centre with a dark outline; green when a
+// hookable surface is in range (pad2 > 0). Sizes in pixels, from the screen-space uv derivatives.
+float4 Crosshair(float2 uv) {
+    float2 px = (uv - 0.5) / max(abs(float2(ddx(uv.x), ddy(uv.y))), 1e-6);
+    float ax = abs(px.x), ay = abs(px.y);
+    bool core = (ax < 1.0 && ay >= 5.0 && ay <= 13.0) || (ay < 1.0 && ax >= 5.0 && ax <= 13.0) || (ax < 1.5 && ay < 1.5);
+    bool edge = (ax < 2.2 && ay >= 3.8 && ay <= 14.2) || (ay < 2.2 && ax >= 3.8 && ax <= 14.2) || (ax < 2.7 && ay < 2.7);
+    float3 c = pad2 > 0.5 ? float3(0.35, 1.0, 0.45) : float3(1.0, 1.0, 1.0);
+    if (core) return float4(c, 1.0);
+    if (edge) return float4(0, 0, 0, 0.6);
+    return 0;
+}
 float4 PS(VSOut i) : SV_Target {
+    float4 xhair = pad1 > 0.5 ? Crosshair(i.uv) : 0;
+    if (xhair.a > 0) return xhair;
     if (testPattern > 0.5) {
         // Translucent checkerboard in the top-left quarter: proves the hook draws.
         if (i.uv.x > 0.25 || i.uv.y > 0.25) return 0;
@@ -953,7 +967,14 @@ static void composite(IDXGISwapChain* sc, UINT flags) {
             if (retired > g_lastUploaded) g_lastUploaded = retired;
         }
     }
-    if (!test && !mc) return;
+    static uint64_t crossFrame = 0, crossFrameMs = 0;
+    bool cross = false;
+    if (control_snapshot(&ctrl) && (ctrl.flags & ERMC_CTRL_CROSSHAIR)) {
+        uint64_t nowMs = now_ms();
+        if (ctrl.mcFrame != crossFrame) { crossFrame = ctrl.mcFrame; crossFrameMs = nowMs; }
+        cross = nowMs - crossFrameMs < 1000;  // AoTTG2 still running
+    }
+    if (!test && !mc && !cross) return;
 
     // Pipeline objects are made the first time something is to be drawn.
     if (!g_pso) {
@@ -1076,6 +1097,8 @@ static void composite(IDXGISwapChain* sc, UINT flags) {
     p.tintAmount = 0.35f;
     p.handLayer = (mc && g_texHand) ? 1.0f : 0.0f;
     p.swapRB = g_texGpu ? 1.0f : 0.0f;
+    p.pad1 = cross ? 1.0f : 0.0f;
+    p.pad2 = (cross && ctrl.aimDist > 0) ? 1.0f : 0.0f;
 
     g_list->SetGraphicsRootSignature(g_rootSig);
     g_list->SetDescriptorHeaps(1, &g_srvHeap);
