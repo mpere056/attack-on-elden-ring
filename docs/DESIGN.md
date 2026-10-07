@@ -57,8 +57,8 @@ Each ends with a playtest by the user. Do not start the next before the last one
 
 ## Known risks
 
-1. **Collision reach** (milestone 1). Elden Ring only has Havok collision for streamed-in map
-   tiles. Distant towers may have none.
+1. **Collision reach** (milestone 1): **measured.** Hits out to 355 m in Stormveil and 177 m in
+   the open world, answered within one frame. A longer open-field survey is still wanted.
 2. **ODM speed vs collision sampling** (milestone 5). Sample ahead along velocity; ValCraft's
    hold-and-keep-momentum trick from guide 16 is the fallback.
 3. **Hidden Unity rendering and input** (milestone 6). AoTTG2's window must not need focus; input

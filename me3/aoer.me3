@@ -1,0 +1,12 @@
+# me3 profile for Attack on Elden Ring.
+# me3 starts Elden Ring offline, without Easy Anti-Cheat. Never add online = true or
+# disable_arxan = true here: the bridge must not need either.
+profileVersion = "v1"
+savefile = "ER0000.aoer.sl2"
+
+[[supports]]
+game = "eldenring"
+
+# The bridge loader (built by tools/build_host.py). It loads dist/aoer_core.dll itself.
+[[natives]]
+path = "../dist/aoer_host.dll"
