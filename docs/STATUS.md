@@ -76,3 +76,15 @@ its hero with its own queries, not the layer matrix). Puppet mode is the fallbac
 **Milestone 6: host side running** (compositor hooks installed live, test pattern verified by
 screenshot). Guest side (capturing AoTTG2's hero, cables and HUD into the frames mapping, hiding
 the Tarnished, hiding AoTTG2's own map visuals, an invisible input window over Elden Ring) is next.
+
+**Current state (2026-10-07, plugin 0.10.0): Tarnished mode is the way to play.**
+- Link with F7, then play from Elden Ring's window (option B): Elden Ring animates the Tarnished,
+  AoTTG2 reads global input in the background (`BackgroundInput.cs`) and runs all movement/ODM.
+- Host game-input mode: own movement on, position and facing pinned, motion multiplier 0, animation
+  speed matched; airborne -> no ground locomotion; the plugin taps Elden Ring's jump key in the air.
+- Follow camera (AoTTG2 view direction, 4 m behind the head); crosshair at AoTTG2's projected aim,
+  smoothed; cables overlay. Ground speed 3.3 / 6.0 m/s via HumanStats.RunSpeed; Shift jump 40 %;
+  ODM at 80 % game speed. All three are BepInEx settings.
+- Compositor (soldier mode) off since two NVIDIA driver resets; virtual pad and event-animation
+  routes kept but inert (see MODLOG).
+- Next candidates: hide the overlays over Elden Ring menus; blade hits on enemies (milestone 7).

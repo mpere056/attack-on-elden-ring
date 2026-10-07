@@ -38,9 +38,9 @@ namespace Aoer
         /// Projects a world point (AoTTG2 space) to Elden Ring client pixels through AoTTG2's camera
         /// pose with Elden Ring's aspect ratio. False if behind the camera.
         /// </summary>
-        public static bool Project(Transform cam, float fovDeg, int w, int h, Vector3 p, out float sx, out float sy)
+        public static bool Project(Vector3 eye, Transform cam, float fovDeg, int w, int h, Vector3 p, out float sx, out float sy)
         {
-            Vector3 v = p - cam.position;
+            Vector3 v = p - eye;  // the eye Elden Ring renders from (moved closer than AoTTG2's)
             float z = Vector3.Dot(v, cam.forward);
             sx = sy = 0;
             if (z < 0.05f) return false;

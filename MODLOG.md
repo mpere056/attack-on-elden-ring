@@ -348,3 +348,60 @@
   Tarnished's animation is outside the jump range (202000-202999) while still airborne, at most
   once per second. The tap is masked from AoTTG2's background key reader for ~160 ms. Elden
   Ring's own landing should follow from its jump state. Only AoTTG2 needs a restart.
+
+## 2026-10-07: mid-air animation works; ground speed capped to the Tarnished's
+- User: the automatic jump gives the Tarnished a mid-air animation ("that's great"). But linked
+  ground movement is too fast (AoTTG2's run), even though the animation keeps up.
+- Plugin 0.9.4 `GroundSpeed.cs`: Harmony postfix on Characters.Human.FixedUpdate (local hero,
+  while linked in full mode): on the ground for > 0.2 s with no hook flying or attached, the
+  horizontal speed is eased (25 m/s^2) down to 3.3 m/s (Elden Ring jog, recorded), or 6.0 m/s while
+  the Tarnished plays a sprint animation (20200-20299). ODM, jumps and falls are untouched. The
+  animation-speed match then sits near 1.0 on foot. Untested.
+
+## 2026-10-07: ground speed cap 0.9.4 had no effect
+- Log: patch installed, but linked ground speeds still 11-12 m/s. AoTTG2's Human keeps its own
+  _currentVelocity; trimming rb.velocity after FixedUpdate is overridden.
+- 0.9.5: while linked, Human.Stats.RunSpeed (HumanStats) is set to the Tarnished's speeds (3.3, or
+  6.0 while it plays a sprint animation) every frame and restored on unlink; the original value is
+  logged. If the original is <= 4 it is treated as a multiplier and scaled by wanted / 11.5 m/s.
+  The velocity trim stays as a backstop. Untested.
+
+## 2026-10-07: run speed fixed; jump height lowered
+- 0.9.5 test: "The speed looks great now". Log: AoTTG2 RunSpeed original 12.00 (m/s units), set
+  to 3.3 / 6.0 while linked.
+- User: Shift (AoTTG2 jump) jumps too high; wants a little lower.
+- AoTTG2 humans have no JumpForce (only titans, shifters, horses), so 0.9.6 catches the take-off
+  in the Human.FixedUpdate postfix: grounded within 0.25 s, rising > 2.5 m/s, no hook -> upward
+  speed x 0.84 (~70 % height), held under that for 0.4 s. ODM launches untouched. Untested.
+
+## 2026-10-07: jump lower still; jump height as a setting
+- 0.9.6 test: log shows 8 Shift jumps caught and lowered; user thinks it's better, wants lower.
+- 0.9.7: jump height is a BepInEx config value, `[Linked] JumpHeightPercent` in
+  AoTTG2's BepInEx\config\aoer.bridge.cfg (default 50 %, clamped 5-100), re-read on every F7 link;
+  take-off speed scale = sqrt(percent / 100) (50 % -> 0.71).
+
+## 2026-10-07: jump 40 %; camera pulled in to Elden Ring's distance
+- User: lower the jump a little more; linking zooms the camera far out (AoTTG2's camera distance),
+  unlinking zooms back in.
+- 0.9.8: JumpHeightPercent default 40, and the user's existing cfg changed from 50 to 40.
+  New setting `[Linked] CameraDistance` (default 4.0 m, 1.5-30): the eye sent to Elden Ring slides
+  forward along the camera's own forward axis until the hero's head (position + 1.6 m up) is that
+  far ahead; never further back. The screen centre ray is unchanged, so crosshair/aim are
+  unaffected. Cables are projected from the same moved eye. Untested.
+
+## 2026-10-07: jump OK at 40 %; Elden Ring-style follow camera
+- User screenshots: linked view looked over the Tarnished with it cut off at the bottom edge;
+  normal Elden Ring centres the Tarnished. Sliding along the view axis (0.9.8) kept that framing.
+- 0.9.9: Elden Ring renders from a follow camera: AoTTG2's view direction, eye = head (feet +
+  1.6 m) - forward x CameraDistance (4 m), pulled in when the copy's collision is in the way.
+  AoTTG2 still aims from its own camera, so the crosshair window is placed where AoTTG2's aim
+  (hit point, or 120 m along the aim) projects from the follow camera; cables use the same eye.
+  Untested.
+
+## 2026-10-07: follow camera works; slower ODM; smoother crosshair
+- 0.9.9 test: framing "much better"; hooks land where the crosshair is; crosshair jitters a little.
+  User wants ODM a bit slower.
+- 0.10.0 `OdmPace.cs`: Time.timeScale = OdmSpeedPercent/100 (new setting, default 80, 20-100)
+  while a hook is flying/attached and until the hero lands; 1 otherwise (plain jumps and walking
+  untouched); restored on unlink; left alone when AoTTG2 has paused (timeScale ~0).
+- Crosshair position low-pass filtered (~40 ms), jumps > 120 px taken at once. Untested.

@@ -14,17 +14,42 @@ namespace Aoer
     public class Plugin : BasePlugin
     {
         public const string Guid = "aoer.bridge";
-        public const string Version = "0.9.3";
+        public const string Version = "0.10.0";
         internal static ManualLogSource L;
+        internal static BepInEx.Configuration.ConfigEntry<float> JumpHeight, CameraDistance, OdmSpeed;
+
+        /// <summary>Re-read BepInEx/config/aoer.bridge.cfg (on every link) and apply the values.</summary>
+        internal static void ReloadSettings(BepInEx.Configuration.ConfigFile config)
+        {
+            try { config.Reload(); } catch (Exception) { }
+            GroundSpeed.JumpHeightPercent = JumpHeight.Value;
+            Link.CameraDistance = Mathf.Clamp(CameraDistance.Value, 1.5f, 30f);
+            OdmPace.OdmSpeedPercent = OdmSpeed.Value;
+            L.LogMessage($"settings: jump height {JumpHeight.Value:F0} % of AoTTG2's, camera {Link.CameraDistance:F1} m behind the head, ODM at {OdmSpeed.Value:F0} % speed, while linked");
+        }
+
+        internal static Plugin Instance;
 
         public override void Load()
         {
             L = Log;
             L.LogMessage($"Attack on Elden Ring bridge {Version} loading");
+            CameraDistance = Config.Bind("Linked", "CameraDistance", 4.0f,
+                "How far (metres) Elden Ring's follow camera sits behind the character's head while linked " +
+                "(it turns with the mouse like AoTTG2's camera). Read again every time you press F7 to link.");
+            OdmSpeed = Config.Bind("Linked", "OdmSpeedPercent", 80f,
+                "How fast ODM gear plays while linked, in percent of AoTTG2's normal speed (20-100). Applies while " +
+                "a hook is out and until you land. Read again every time you press F7 to link.");
+            JumpHeight = Config.Bind("Linked", "JumpHeightPercent", 40f,
+                "How high a Shift jump goes while linked, in percent of AoTTG2's normal jump height (5-100). " +
+                "Read again every time you press F7 to link.");
+            ReloadSettings(Config);
+            Instance = this;
             var harmony = new Harmony(Guid);
             OfflineGuard.Apply(harmony, L);
             LongHooks.Patch(harmony);
             BackgroundInput.Patch(harmony);
+            GroundSpeed.Patch(harmony);
             try
             {
                 Bridge.Open();

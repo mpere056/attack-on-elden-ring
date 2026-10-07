@@ -5,22 +5,32 @@ AoTTG2 runs alongside and handles your movement, hooks and blades; Elden Ring dr
 runs its enemies, health and menus. A passthrough mod in the sense of the
 [AI Game Modding Guides](https://github.com/trevaintdead/ai-game-modding-guides) (route 1 + 2).
 
-**Status: experimental, work in progress.** Unofficial fan project, not affiliated with
+**Status: experimental, work in progress. Play offline only.** Unofficial fan project, not affiliated with
 FromSoftware, Bandai Namco or the AoTTG2 team. Built with AI assistance (Claude Code). No game
 files are included: you need your own copies of both games.
 
 ## What works (tested by playing)
-- AoTTG2's hero drives the Tarnished (F7 to link and unlink); Elden Ring's camera follows AoTTG2's.
+- **Tarnished mode:** link with F7 in AoTTG2, then play from Elden Ring's window. Elden Ring plays the
+  Tarnished's own walk/run animations and faces the right way; AoTTG2 runs the movement and ODM
+  physics in the background, reading your keyboard and mouse globally.
 - Elden Ring's ground, walls and caves are copied into AoTTG2 around you, so you walk, climb and
-  ODM-swing on Elden Ring's world. AoTTG2 hooks catch Elden Ring terrain and enemies.
+  ODM-swing on Elden Ring's world. Hooks catch Elden Ring terrain and enemies.
+- An Elden Ring-style follow camera that turns with the mouse; a crosshair (green when a hook would
+  catch) and the ODM cables are drawn as click-through overlay windows.
+- Linked tuning: ground speed matches the Tarnished's (jog / sprint), lower Shift jumps, slower ODM,
+  and the Tarnished does Elden Ring's jump in mid-air.
 - Falling, fall damage and death are handled; a safety net catches falls through the copy.
 - AoTTG2 is kept offline: every multiplayer connection is blocked.
 
+## Settings
+`BepInEx/config/aoer.bridge.cfg` in AoTTG2's folder, re-read every time you press F7 to link:
+`JumpHeightPercent` (default 40), `CameraDistance` (metres, default 4), `OdmSpeedPercent` (default 80).
+
 ## Not working yet
-- The Tarnished glides (no walk animation) and AoTTG2's soldier, cables and HUD aren't drawn into
-  Elden Ring yet (milestone 6, in progress). You play with both windows side by side.
-- Long-range hooks (milestone 5) are built but not yet tested in play.
-- Blade hits on Elden Ring enemies (milestone 7). Occasional wall clipping.
+- Blade hits on Elden Ring enemies (milestone 7). Long-range hooks are built but untested.
+- The crosshair and cables also show over Elden Ring's menus. Occasional wall clipping.
+- Soldier mode (drawing AoTTG2's soldier into Elden Ring) is parked; its D3D12 hooks coincided with
+  display-driver resets, so they are switched off.
 
 See `docs/DESIGN.md` for the plan and `docs/STATUS.md` / `MODLOG.md` for test results.
 
@@ -41,7 +51,7 @@ See `docs/DESIGN.md` for the plan and `docs/STATUS.md` / `MODLOG.md` for test re
    `.local/aottg2_dir.txt`.
 3. `python tools/build_host.py` and `python tools/build_guest.py`
 4. Start Elden Ring with `Play-EldenRing.bat`, load in; start AoTTG2 with `Play-AoTTG2.bat`,
-   spawn a soldier in single player, press F7.
+   spawn a soldier in single player, press F7, then click into Elden Ring's window and play there.
 
 ## Credits
 Built on [Minecraft-Ring](https://github.com/siddoff/Minecraft-Ring) and
