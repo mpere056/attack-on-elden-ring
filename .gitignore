@@ -1,0 +1,43 @@
+# Whitelist: ignore everything, then include only our own source and docs.
+# Never invert this. Game files, dumps, interop assemblies, builds and logs stay out.
+*
+!*/
+
+!/.gitignore
+!/AGENTS.md
+!/CLAUDE.md
+!/README.md
+!/MODLOG.md
+!/LICENSE
+!/THIRD-PARTY-NOTICES.md
+
+!/docs/**/*.md
+
+!/host/**/*.cpp
+!/host/**/*.h
+!/host/**/*.c
+!/host/**/*.def
+!/host/**/*.txt
+!/host/third_party/minhook/LICENSE.txt
+
+!/guest/**/*.cs
+!/guest/**/*.csproj
+
+!/protocol/**/*.h
+!/protocol/**/*.cs
+
+!/me3/*.me3
+!/tools/*.py
+!/tools/*.ps1
+!/*.bat
+!/*.ps1
+
+# Never, even if matched above
+/ref/
+/.tools/
+/.local/
+/build/
+/dist/
+/runtime/
+**/bin/
+**/obj/
