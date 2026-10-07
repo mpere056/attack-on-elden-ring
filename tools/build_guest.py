@@ -13,7 +13,8 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 DOTNET = ROOT / '.tools/dotnet/dotnet.exe'
-AOTTG2 = Path(os.environ.get('AOTTG2_DIR', r'C:\Users\<you>\Downloads\Aottg2Launcher\Release\MainApp'))
+from paths import aottg2_dir  # AOTTG2_DIR or .local/aottg2_dir.txt (kept out of the repo)
+AOTTG2 = aottg2_dir()
 OUT = ROOT / 'dist/guest'
 OBJ = ROOT / 'build/guest/obj'
 

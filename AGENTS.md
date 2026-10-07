@@ -52,7 +52,7 @@ draws the world, runs the enemies and owns health, death and menus.
 - Host: Elden Ring, App Ver. 1.17.1 (`eldenring.exe` 2.7.1.0), Steam,
   `C:\Program Files (x86)\Steam\steamapps\common\ELDEN RING\Game`
 - Guest: AoTTG2 1.2.3, Unity 2023.1.22, IL2CPP (metadata v29), Photon PUN,
-  `C:\Users\<you>\Downloads\Aottg2Launcher\Release\MainApp`
+  folder from `.local/aottg2_dir.txt` or `AOTTG2_DIR` (see `tools/paths.py`)
 - Host loader: me3 (Mod Engine 3) v0.13.0, `[[natives]]` profile, separate save file
 - Guest loader: BepInEx 6 bleeding edge (IL2CPP x64) build 788
 - Player authority: AoTTG2 (movement, ODM gear). Elden Ring: world, enemies, HP, death, menus.

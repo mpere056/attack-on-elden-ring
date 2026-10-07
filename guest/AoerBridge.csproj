@@ -12,7 +12,6 @@
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
     <NoWarn>CA1416</NoWarn> <!-- Windows-only on purpose: shared memory with Elden Ring -->
     <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
-    <AoTTG2Dir Condition="'$(AoTTG2Dir)' == ''">C:\Users\<you>\Downloads\Aottg2Launcher\Release\MainApp</AoTTG2Dir>
     <BepCore>$(AoTTG2Dir)\BepInEx\core</BepCore>
     <Interop>$(AoTTG2Dir)\BepInEx\interop</Interop>
   </PropertyGroup>
