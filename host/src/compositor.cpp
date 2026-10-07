@@ -143,16 +143,8 @@ static bool frames_open() {
     uint64_t now = now_ms();
     if (now - g_lastMapAttempt < 2000) return false;
     g_lastMapAttempt = now;
-    HANDLE f = CreateFileA(bridge_path("frames.shm"), GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE,
-                           nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
-    if (f == INVALID_HANDLE_VALUE) return false;  // Minecraft creates it
-    LARGE_INTEGER size;
-    if (!GetFileSizeEx(f, &size) || (uint64_t)size.QuadPart < ERMC_FRAMES_FILE_SIZE) {
-        CloseHandle(f);
-        return false;
-    }
-    HANDLE m = CreateFileMappingA(f, nullptr, PAGE_READWRITE, 0, ERMC_FRAMES_FILE_SIZE, nullptr);
-    CloseHandle(f);
+    // Named mapping created by the AoTTG2 plugin (Attack on Elden Ring; upstream used a file).
+    HANDLE m = OpenFileMappingA(FILE_MAP_ALL_ACCESS, FALSE, AOER_FRAMES_NAME);
     if (!m) return false;
     g_frames = (uint8_t*)MapViewOfFile(m, FILE_MAP_ALL_ACCESS, 0, 0, ERMC_FRAMES_FILE_SIZE);
     CloseHandle(m);
@@ -168,7 +160,7 @@ static bool frames_open() {
         g_frames = nullptr;
         return false;
     }
-    if (g_frames) log("compositor: mapped frames.shm");
+    if (g_frames) log("compositor: mapped %s", AOER_FRAMES_NAME);
     return g_frames != nullptr;
 }
 

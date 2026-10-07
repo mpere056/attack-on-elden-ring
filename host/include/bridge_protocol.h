@@ -378,8 +378,9 @@ typedef struct ErmcPassageTable {
  * Minecraft writes a slot, then publishes the frame's pose in ErmcControl (mcFrame = poseId),
  * so by the time ER renders a pose, the matching pixels are already available. */
 #define ERMC_FRAMES_MAGIC 0x524D484Du  /* "MHMR" */
-#define ERMC_FRAME_MAX_W 3840u
-#define ERMC_FRAME_MAX_H 2160u
+#define ERMC_FRAME_MAX_W 2560u  /* AoER: 2560x1440 cap keeps the mapping ~177 MB (upstream 3840x2160) */
+#define ERMC_FRAME_MAX_H 1440u
+#define AOER_FRAMES_NAME "Local\\AoER_frames_v1"  /* named mapping, ERMC_FRAMES_FILE_SIZE bytes, created by the guest */
 #define ERMC_FRAME_SLOTS 3u
 #define ERMC_FRAME_HDR 0x100u
 #define ERMC_FRAME_SLOT_SIZE (ERMC_FRAME_HDR + ERMC_FRAME_MAX_W * ERMC_FRAME_MAX_H * 16u)

@@ -52,8 +52,13 @@ for name in ['buffer.c', 'hook.c', 'trampoline.c', 'hde/hde64.c']:
 
 link = ['--target=x86_64-w64-mingw32', '-shared', '-static', '-s']
 objs = lambda names: [str(OBJ / f'{x}.o') for x in names]
-run([str(CXX), *link, *objs(['loader', 'log', 'shm']), '-luser32', '-lkernel32',
-     '-o', str(OUT / 'aoer_host.dll')])
 run([str(CXX), *link, *objs(['core', 'crash', 'log', 'shm', 'memutil', 'debugcmd', 'frame', 'game', 'compositor']),
      *mh, '-luser32', '-lkernel32', '-ld3d12', '-ldxgi', '-ldxguid', '-o', str(OUT / 'aoer_core.dll')])
+# The loader stays loaded while Elden Ring runs; it rarely changes. The core is hot-swappable
+# (python tools/erctl.py reload).
+r = subprocess.run([str(CXX), *link, *objs(['loader', 'log', 'shm']), '-luser32', '-lkernel32',
+                    '-o', str(OUT / 'aoer_host.dll')], capture_output=True, text=True)
+if r.returncode:
+    print('note: dist/aoer_host.dll is in use (Elden Ring is running), so the loader was not relinked. '
+          'Restart Elden Ring if the loader itself changed.')
 print('Built', OUT / 'aoer_host.dll', 'and', OUT / 'aoer_core.dll')

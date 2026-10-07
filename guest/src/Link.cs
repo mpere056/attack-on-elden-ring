@@ -25,6 +25,7 @@ namespace Aoer
         private enum Phase { Off, Preparing, Linked }
         private static Phase _phase = Phase.Off;
         public static bool Active => _phase != Phase.Off;
+        public static bool CollisionActive => _phase == Phase.Linked && !_puppet;
 
         private static Vector3 _offset;           // hero = er + offset
         private static uint _lifeAtLink;
@@ -134,6 +135,7 @@ namespace Aoer
             Vector3 erHero = hero.transform.position - _offset;
             TerrainMirror.Update(erHero, _velocity);
             EnemyProxies.Update(_offset, TerrainMirror.Layer);
+            LongHooks.Update();
             Rescue(hero, erHero);
         }
 
@@ -165,6 +167,7 @@ namespace Aoer
             bool wasLinked = _phase == Phase.Linked;
             _phase = Phase.Off;
             Bridge.WriteControl(0, 0, 0, 0, 0);
+            LongHooks.End();
             TerrainMirror.End();
             EnemyProxies.End();
             Plugin.L.LogMessage($"link: OFF ({reason})" + (wasLinked ? $"; fastest hero speed {_maxSpeed:F1} m/s, {Rescues} rescues, " +
@@ -205,7 +208,8 @@ namespace Aoer
                 Bridge.ReadState(out var s);
                 string line = $"link: hero at ER {e.x,9:F2} {e.y,8:F2} {e.z,9:F2} yaw {hero.transform.eulerAngles.y,5:F0} speed {_velocity.magnitude,5:F1}; " +
                               $"Tarnished reported at {s.PX,9:F2} {s.PY,8:F2} {s.PZ,9:F2}; tiles {TerrainMirror.TileCount}, " +
-                              $"batches {TerrainMirror.Batches} (last {TerrainMirror.LastBatchMs:F0} ms), enemies {EnemyProxies.Count}";
+                              $"batches {TerrainMirror.Batches} (last {TerrainMirror.LastBatchMs:F0} ms), wall panels {WallProbe.Panels}, enemies {EnemyProxies.Count}, " +
+                              $"long hooks {LongHooks.Fired} fired / {LongHooks.Anchored} anchored (last {LongHooks.LastDistance:F0} m) / {LongHooks.Missed} missed";
                 Plugin.L.LogInfo(line);
             }
         }

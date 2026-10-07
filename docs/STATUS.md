@@ -70,3 +70,9 @@ its hero with its own queries, not the layer matrix). Puppet mode is the fallbac
 - `guest/src/Rays.cs`: async ray batches through the shared ray block.
 - Not tested in game. Unknowns: ray throughput for ~7800-ray batches, whether AoTTG2's hook mask
   and grounding include the chosen layer, MeshCollider behaviour at ODM speeds.
+
+**Milestone 4: done** (0.4.9: two-step ceilings + wall scanner; caves "much better").
+**Milestone 5: built (0.5.0), waiting on a test.** Long-range hook anchors from Elden Ring rays.
+**Milestone 6: host side running** (compositor hooks installed live, test pattern verified by
+screenshot). Guest side (capturing AoTTG2's hero, cables and HUD into the frames mapping, hiding
+the Tarnished, hiding AoTTG2's own map visuals, an invisible input window over Elden Ring) is next.

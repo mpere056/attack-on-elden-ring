@@ -23,8 +23,7 @@ namespace Aoer
     {
         private const int TileSize = 16;               // metres, one column per metre
         private const int Edge = TileSize + 1;         // 17 x 17 columns per tile
-        private const int RaysPerTile = Edge * Edge * 3;
-        private const int TilesPerBatch = 9;
+        private const int TilesPerBatch = 4;
         private const int KeepRadius = 3;              // tiles around the player to keep sampled
         private const int DropRadius = 5;
         private const float ResampleHeight = 5f;
@@ -42,6 +41,10 @@ namespace Aoer
         private static readonly List<(int tx, int tz, float yRef)> _batch = new();
         private static readonly Ray3[] _rays = new Ray3[Rays.MaxRays];
         private static readonly RayHit[] _hits = new RayHit[Rays.MaxRays];
+        private static readonly RayHit[] _hitsFloor = new RayHit[Rays.MaxRays];
+        private static readonly int[] _ceilIndex = new int[Rays.MaxRays];
+        private enum Pending { None, TilesFloor, TilesCeiling, Walls }
+        private static Pending _pending;
         private static readonly List<Collider> _disabled = new();
 
         private static GameObject _root;
@@ -62,6 +65,8 @@ namespace Aoer
             UnityEngine.Object.DontDestroyOnLoad(_root);
             SetOffset(Vector3.zero);
             Batches = RaysCast = 0;
+            _pending = Pending.None;
+            WallProbe.Begin();
             FloorHits = TopHits = Triangles = SolidColumns = 0;
             Active = true;
         }
@@ -82,7 +87,21 @@ namespace Aoer
             if (!Active) return;
             if (Rays.Busy)
             {
-                if (Rays.TryCollect(_hits)) BuildBatch();
+                if (Rays.TryCollect(_hits))
+                {
+                    switch (_pending)
+                    {
+                        case Pending.TilesFloor: CollectFloors(); break;
+                        case Pending.TilesCeiling: BuildBatch(); break;
+                        case Pending.Walls: WallProbe.Collect(_hits); _pending = Pending.None; break;
+                    }
+                }
+                return;
+            }
+            _pending = Pending.None;
+            if (WallProbe.Due() && WallProbe.Submit(erPos, _rays))
+            {
+                _pending = Pending.Walls;
                 return;
             }
             // Pick the tiles most needed next, looking ahead along the velocity.
@@ -99,23 +118,27 @@ namespace Aoer
                 }
             DropFar(cx, cz);
             if (wanted.Count == 0) return;
-            wanted.Sort((a, b) => a.score.CompareTo(b.score));
+            wanted.Sort((x, y) => x.score.CompareTo(y.score));
             _batch.Clear();
             int n = 0;
             foreach (var w in wanted)
             {
                 if (_batch.Count >= TilesPerBatch) break;
                 _batch.Add((w.tx, w.tz, erPos.y));
-                n = AddTileRays(w.tx, w.tz, erPos.y, n);
+                n = AddFloorRays(w.tx, w.tz, erPos.y, n);
             }
             if (Rays.Submit(_rays, n))
             {
+                _pending = Pending.TilesFloor;
                 _batchStart = Time.realtimeSinceStartup;
                 RaysCast += n;
             }
+            else _batch.Clear();
         }
 
-        private static int AddTileRays(int tx, int tz, float yRef, int n)
+        // Step 1, two rays per column: floor (down from just above the player's level) and top
+        // (down from high above).
+        private static int AddFloorRays(int tx, int tz, float yRef, int n)
         {
             float x0 = tx * TileSize, z0 = tz * TileSize;
             for (int i = 0; i < Edge; i++)
@@ -124,74 +147,110 @@ namespace Aoer
                     float x = x0 + i, z = z0 + j;
                     _rays[n++] = new Ray3(x, yRef + 2.5f, z, x, yRef - Reach, z);  // floor
                     _rays[n++] = new Ray3(x, yRef + Reach, z, x, yRef - Reach, z); // top
-                    _rays[n++] = new Ray3(x, yRef + 0.3f, z, x, yRef + Reach, z);  // ceiling
                 }
             return n;
+        }
+
+        // Step 2: for every column with a floor, look for a ceiling starting just above that floor,
+        // so the ray can never start inside the rock it is looking for (milestone 4 cave test: a ray
+        // starting at a fixed height inside a rising cave floor made whole caves look solid).
+        private static void CollectFloors()
+        {
+            int columns = _batch.Count * Edge * Edge;
+            Array.Copy(_hits, _hitsFloor, columns * 2);
+            int n = 0;
+            for (int c = 0; c < columns; c++)
+            {
+                _ceilIndex[c] = -1;
+                RayHit f = _hitsFloor[2 * c];
+                if (!f.Hit) continue;
+                float yRef = _batch[c / (Edge * Edge)].yRef;
+                _ceilIndex[c] = n;
+                _rays[n++] = new Ray3(f.X, f.Y + 0.2f, f.Z, f.X, yRef + Reach, f.Z);
+            }
+            if (n > 0 && Rays.Submit(_rays, n))
+            {
+                _pending = Pending.TilesCeiling;
+                RaysCast += n;
+                return;
+            }
+            // No floors at all (or the ray block is in use): build without ceilings.
+            for (int c = 0; c < columns; c++) _ceilIndex[c] = -1;
+            BuildBatch();
         }
 
         private static void BuildBatch()
         {
             LastBatchMs = (Time.realtimeSinceStartup - _batchStart) * 1000f;
             Batches++;
-            int n = 0;
-            foreach (var (tx, tz, yRef) in _batch)
+            for (int t = 0; t < _batch.Count; t++)
             {
-                BuildTile(tx, tz, yRef, n);
-                n += RaysPerTile;
+                var (tx, tz, yRef) = _batch[t];
+                BuildTile(tx, tz, yRef, t * Edge * Edge);
             }
             _batch.Clear();
+            _pending = Pending.None;
         }
 
-        private static void BuildTile(int tx, int tz, float yRef, int first)
+        private static void BuildTile(int tx, int tz, float yRef, int firstColumn)
         {
             var floor = new float[Edge, Edge];
+            var solid = new bool[Edge, Edge];
             var verts = new List<Vector3>();
             var tris = new List<int>();
             float x0 = tx * TileSize, z0 = tz * TileSize;
             for (int i = 0; i < Edge; i++)
                 for (int j = 0; j < Edge; j++)
                 {
-                    int k = first + (i * Edge + j) * 3;
-                    RayHit f = _hits[k], top = _hits[k + 1], ceil = _hits[k + 2];
-                    // Is there open ground at the player's level in this column? The floor ray started
-                    // at yRef + 2.5 and found a surface close below the player's level.
-                    bool openHere = f.Hit && f.Y >= yRef - 3f;
-                    if (top.Hit && top.Y > yRef + 2.5f)
+                    int c = firstColumn + i * Edge + j;
+                    RayHit f = _hitsFloor[2 * c], top = _hitsFloor[2 * c + 1];
+                    int ci = _ceilIndex[c];
+                    bool hasCeil = ci >= 0 && _hits[ci].Hit;
+                    float ceil = hasCeil ? _hits[ci].Y : float.NaN;
+                    if (!f.Hit)
                     {
-                        // Something rises above the player's level. Only call it an overhang (roof,
-                        // arch, cave ceiling) when there is open ground under it with real headroom;
-                        // otherwise the column is solid from far below up to its top (wall, cliff, the
-                        // side of a pit). Milestone 4 test: from inside a pit, the "ceiling" ray started
-                        // inside the hill and hit the hill's top from below, which made a hollow wall.
-                        bool overhang = openHere && ceil.Hit && ceil.Y > f.Y + 1.8f && ceil.Y < top.Y - 0.05f;
-                        if (overhang)
+                        // The floor ray started inside rock (or there is nothing below): solid if
+                        // something rises above the player's level, otherwise the top is the floor.
+                        if (top.Hit && top.Y > yRef + 2.5f)
                         {
-                            AddBox(verts, tris, x0 + i, z0 + j, ceil.Y, top.Y);
-                            floor[i, j] = f.Y;
+                            solid[i, j] = true;
+                            floor[i, j] = top.Y;
                         }
-                        else
-                        {
-                            AddBox(verts, tris, x0 + i, z0 + j, yRef - Reach, top.Y);
-                            floor[i, j] = top.Y;  // the walkable top, and what the rescue net lifts to
-                            SolidColumns++;
-                        }
+                        else floor[i, j] = top.Hit ? top.Y : float.NaN;
+                    }
+                    else if (hasCeil && ceil < f.Y + 1.8f)
+                    {
+                        // Less than a body's height of room above the floor: blocked (rock seen from
+                        // inside, or a crawl space). Solid up to the column's top.
+                        solid[i, j] = true;
+                        floor[i, j] = top.Hit ? Math.Max(top.Y, ceil) : ceil;
                     }
                     else
                     {
-                        // Nothing above the player's level: the floor, or (if the floor ray started inside
-                        // a rock and missed) the top surface.
-                        floor[i, j] = f.Hit ? f.Y : top.Hit ? top.Y : float.NaN;
+                        // Open floor; anything found above it is an overhang (roof, arch, cave ceiling).
+                        floor[i, j] = f.Y;
+                        if (hasCeil) AddBox(verts, tris, x0 + i, z0 + j, ceil, Math.Max(ceil + 0.5f, top.Hit ? top.Y : ceil));
+                    }
+                    if (solid[i, j])
+                    {
+                        AddBox(verts, tris, x0 + i, z0 + j, yRef - Reach, floor[i, j]);
+                        SolidColumns++;
                     }
                     if (f.Hit) FloorHits++;
                     if (top.Hit) TopHits++;
                 }
-            // Ground surface between every four neighbouring floor samples, steep or not: a hole is
-            // worse than a steep ramp (milestone 4 test: the hero fell through a rocky slope).
+            // Ground surface between neighbouring floor samples. Steep open ground stays connected (a
+            // hole is worse than a steep ramp: first full-mode test). But a solid column is never
+            // joined to a much lower neighbour: its box is the wall, and a ramp there let AoTTG2's
+            // hero walk up "invisible walls" and out through cave roofs (cave test).
             for (int i = 0; i < TileSize; i++)
                 for (int j = 0; j < TileSize; j++)
                 {
                     float a = floor[i, j], b = floor[i + 1, j], c = floor[i, j + 1], d = floor[i + 1, j + 1];
                     if (float.IsNaN(a) || float.IsNaN(b) || float.IsNaN(c) || float.IsNaN(d)) continue;
+                    bool anySolid = solid[i, j] || solid[i + 1, j] || solid[i, j + 1] || solid[i + 1, j + 1];
+                    float lo = Math.Min(Math.Min(a, b), Math.Min(c, d)), hi = Math.Max(Math.Max(a, b), Math.Max(c, d));
+                    if (anySolid && hi - lo > 1.2f) continue;
                     int v = verts.Count;
                     verts.Add(U(x0 + i, a, z0 + j)); verts.Add(U(x0 + i + 1, b, z0 + j));
                     verts.Add(U(x0 + i, c, z0 + j + 1)); verts.Add(U(x0 + i + 1, d, z0 + j + 1));
@@ -220,6 +279,8 @@ namespace Aoer
             }
             _tiles[key] = tile;
         }
+
+        internal static Transform Root => _root == null ? null : _root.transform;
 
         // Tile vertices are in Elden Ring coordinates; the root object carries the offset.
         private static Vector3 U(float x, float y, float z) => new Vector3(x, y, z);
@@ -266,6 +327,7 @@ namespace Aoer
 
         public static int TileCount => _tiles.Count;
         public static int Layer => _layer;
+        internal static Vector3 Offset => _offset;
 
         /// <summary>
         /// Height of the copied ground at the nearest column to an Elden Ring point, if a tile with a
@@ -436,6 +498,7 @@ namespace Aoer
         public static void End()
         {
             Active = false;
+            WallProbe.End();
             Rays.Abandon();
             foreach (var t in _tiles.Values) if (t.Go != null) UnityEngine.Object.Destroy(t.Go);
             _tiles.Clear();

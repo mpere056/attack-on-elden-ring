@@ -14,14 +14,16 @@ namespace Aoer
     public class Plugin : BasePlugin
     {
         public const string Guid = "aoer.bridge";
-        public const string Version = "0.4.7";
+        public const string Version = "0.5.0";
         internal static ManualLogSource L;
 
         public override void Load()
         {
             L = Log;
             L.LogMessage($"Attack on Elden Ring bridge {Version} loading");
-            OfflineGuard.Apply(new Harmony(Guid), L);
+            var harmony = new Harmony(Guid);
+            OfflineGuard.Apply(harmony, L);
+            LongHooks.Patch(harmony);
             try
             {
                 Bridge.Open();

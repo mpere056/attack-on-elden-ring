@@ -126,3 +126,34 @@
   rotation unless world-aligned), on the terrain copy's layer so hooks catch them, updated every
   Elden Ring tick, removed when gone or dead. Not tested.
 - Still by design until milestone 6: the Tarnished glides (puppet, no animation).
+
+## 2026-10-07: milestone 4, enemies hookable; caves still wrong
+- User: hooking enemies works. Caves better but: "walking up an invisible wall" and rising through
+  terrain in enclosed spaces; unlinked with F7.
+- Live analysis in the cave (Tarnished at 11120.9, 86.9, 9680.0): roof ~91-94, floor dropping to
+  64-82 in hollows, real rock walls 4-6 m away. Old rule: 315 of 625 columns "solid" (whole cave
+  floors), and solid columns were joined to the floor by ramps the hero walked up. Two-step rule
+  (ceiling ray starting 0.2 m above the found floor): 21 solid.
+- 0.4.8/0.4.9:
+  - tiles: floor + top first, then ceilings from just above each floor; a column is solid only
+    with no floor, or with < 1.8 m headroom; no ramps from a solid column to a neighbour > 1.2 m
+    lower; 4 tiles per batch.
+  - `WallProbe.cs`: every 0.1 s, 48 directions x 3 heights (0.7/1.3/1.9 m), 20 m; a hit is a wall
+    when the next ray up stops < 0.35 m further (top ray: compared with the one below, or nothing
+    below); each wall hit becomes a thin pooled BoxCollider panel. Live check in the cave: 66 wall
+    hits (walls 2-16 m around), 45 slope hits skipped. A first version that compared hits with the
+    copied floor would have skipped every hit (floor of a rock column is its top, above the hit).
+
+## 2026-10-07: caves good; milestone 6 started (host); milestone 5 built
+- User: caves "much better", one wall clip somewhere; asked for animation, crosshair and visible
+  hooks next, then for milestone 5.
+- Milestone 6, host: compositor on (AOER_COMPOSITOR=1); frames via named mapping
+  `Local\AoER_frames_v1` created by the guest, capped at 2560x1440 (~177 MB, was 3840x2160 file).
+  Hot-reloaded into the running game with new `erctl.py reload`: "native Windows D3D12 Present
+  and command queue hooks installed", swapchain 1280x720. `erctl.py testpattern on` + `erctl.py
+  shot` (PIL screenshot of the Elden Ring window rect): checkerboard visible top-left; ~94 fps,
+  composite 0.37 ms. build_host.py now relinks the core first and tolerates a locked loader.
+- Milestone 5 (0.5.0): `LongHooks.cs` postfix on Characters.Hook.SetHooking; ray along
+  base + relative velocity, 150 m, through the debug single-ray channel (ERMC_CMD_RAYCAST, custom
+  filter 0x5D); a 2 x 2 x 0.5 m anchor on the copy's layer at the hit, 8 s life. Channel tested live:
+  11-16 ms per ray. Not tested in play.

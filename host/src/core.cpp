@@ -5,7 +5,7 @@
 #include "MinHook.h"
 
 #ifndef AOER_COMPOSITOR
-#define AOER_COMPOSITOR 0
+#define AOER_COMPOSITOR 1  // milestone 6
 #endif
 
 namespace mb {

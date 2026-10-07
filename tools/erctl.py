@@ -4,6 +4,9 @@
     python tools/erctl.py aim           live: distance to whatever the camera points at
     python tools/erctl.py reach         one sweep of rays in every direction, saved to runtime/
     python tools/erctl.py survey        hands-off: records aim rays and sweeps while you play
+    python tools/erctl.py reload        swap in a freshly built dist/aoer_core.dll without restarting
+    python tools/erctl.py testpattern on|off   compositor check: checkerboard in the top-left corner
+    python tools/erctl.py shot          screenshot of the Elden Ring window into runtime/
 
 Milestone 1 uses `aim` and `reach` to measure how far away Elden Ring has collision loaded,
 which decides how far ODM hooks can reach. Rays use Elden Ring's terrain filter: map geometry
@@ -238,10 +241,44 @@ def cmd_survey(m, length=600.0):
             time.sleep(0.25)
 
 
+def cmd_reload(m):
+    req, ack = struct.unpack_from('<II', m, 0x38)
+    gen_before = struct.unpack_from('<I', m, 0x40)[0]
+    struct.pack_into('<I', m, 0x38, req + 1)
+    for _ in range(200):
+        time.sleep(0.05)
+        ack, gen, status = struct.unpack_from('<IIi', m, 0x3C)
+        if ack == req + 1:
+            print(f'core reloaded: generation {gen_before} -> {gen}, status {status} (1 = running)')
+            return
+    print('no answer from the loader within 10 s; see runtime/host.log')
+
+
+def cmd_testpattern(m):
+    on = len(sys.argv) > 2 and sys.argv[2] == 'on'
+    flags = struct.unpack_from('<I', m, 0x64)[0]
+    flags = (flags | 1) if on else (flags & ~1)
+    struct.pack_into('<I', m, 0x64, flags)
+    print('test pattern', 'on' if on else 'off')
+
+
+def cmd_shot(m):
+    from PIL import ImageGrab
+    blob = bytes(m[OFF_STATE:OFF_STATE + 0x114])
+    x, y, w, h = struct.unpack_from('<4i', blob, 0x64)
+    if w <= 0 or h <= 0:
+        sys.exit('Elden Ring has not published its window position yet')
+    img = ImageGrab.grab(bbox=(x, y, x + w, y + h), all_screens=True)
+    out = ROOT / 'runtime' / f'shot-{datetime.now():%H%M%S}.png'
+    img.save(out)
+    print(f'saved {out} ({w}x{h} at {x},{y})')
+
+
 def main():
     sys.stdout.reconfigure(line_buffering=True)
     cmd = sys.argv[1] if len(sys.argv) > 1 else 'status'
-    fn = {'status': cmd_status, 'aim': cmd_aim, 'reach': cmd_reach, 'survey': cmd_survey}.get(cmd)
+    fn = {'status': cmd_status, 'aim': cmd_aim, 'reach': cmd_reach, 'survey': cmd_survey,
+          'reload': cmd_reload, 'testpattern': cmd_testpattern, 'shot': cmd_shot}.get(cmd)
     if not fn:
         sys.exit(__doc__)
     m = open_bridge()
