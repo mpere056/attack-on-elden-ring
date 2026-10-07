@@ -35,12 +35,15 @@ files are included: you need your own copies of both games.
 See `docs/DESIGN.md` for the plan and `docs/STATUS.md` / `MODLOG.md` for test results.
 
 ## Requirements
+Full list with exact versions, download links, checksums and licences: **[docs/COMPATIBILITY.md](docs/COMPATIBILITY.md)**.
+
 - Windows x64
-- Elden Ring, Steam, App Ver. **1.17.1** (`eldenring.exe` 2.7.1.0). Other versions are refused.
-- AoTTG2 **1.2.3**, run directly from `Aottg2.exe`
-- [me3](https://github.com/garyttierney/me3) v0.13.0 and [BepInEx 6](https://builds.bepinex.dev/projects/bepinex_be)
-  bleeding edge build 788 (IL2CPP x64), installed into AoTTG2's folder
-- To build: [LLVM-MinGW](https://github.com/mstorsjo/llvm-mingw) and the .NET 8 SDK (both can live in `.tools/`)
+- Elden Ring (Steam), **App Ver. 1.17.1** (`eldenring.exe` 2.7.1.0, Steam build 25080141). Other versions are refused.
+- AoTTG2 **1.2.3** ([aottg2.itch.io/aottg2](https://aottg2.itch.io/aottg2)), run directly from `Aottg2.exe`
+- [me3](https://github.com/garyttierney/me3/releases/tag/v0.13.0) **v0.13.0** for Elden Ring, and
+  [BepInEx](https://builds.bepinex.dev/projects/bepinex_be) **6.0.0-be.788** (IL2CPP x64) installed into AoTTG2's folder
+- To build: [LLVM-MinGW](https://github.com/mstorsjo/llvm-mingw/releases/tag/20261006) 20261006,
+  the [.NET SDK](https://dotnet.microsoft.com/download/dotnet/8.0) 8.0, and [Python](https://www.python.org/downloads/) 3.12
 
 **Offline only.** Elden Ring starts through me3 without Easy Anti-Cheat and with its own save file
 (`ER0000.aoer.sl2`). Never take a modded game online.
