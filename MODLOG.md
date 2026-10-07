@@ -157,3 +157,194 @@
   base + relative velocity, 150 m, through the debug single-ray channel (ERMC_CMD_RAYCAST, custom
   filter 0x5D); a 2 x 2 x 0.5 m anchor on the copy's layer at the hit, 8 s life. Channel tested live:
   11-16 ms per ray. Not tested in play.
+
+## 2026-10-07: milestone 6, guest side; first test crashed AoTTG2
+- 0.6.0 `Compositor.cs`: on link (full mode) AoTTG2's camera clears to magenta, fog and post
+  effects off, existing non-hero renderers hidden, window resized to Elden Ring's back buffer;
+  WaitForEndOfFrame coroutine reads the back buffer (HUD included), keys out magenta into
+  premultiplied BGRA, writes the GUI layer of `Local\AoER_frames_v1` (world + depth zeroed);
+  control gets COMPOSITE | HIDE_HUNTER; F6 toggles. Tarnished hidden while compositing.
+- Test: link, collision, hiding (77 renderers, 1 post effect) and 800x600 -> 1280x720 all fine,
+  then AoTTG2 crashed in `Texture2D.GetRawTextureData_Injected(_tex.Pointer)`: AccessViolation.
+  The injected call takes Unity's native object handle, not the interop pointer.
+- 0.6.1: `GetPixels32()` (managed Il2Cpp Color32 array, same RGBA byte layout) instead.
+- User asked whether the Tarnished could stay, with Elden Ring's own animations. Answer: possible
+  (needs reverse engineering how Elden Ring requests animations; none in the bridge yet), but Elden
+  Ring has no ODM/blade animations; plan a "Tarnished mode" toggle after soldier mode works.
+
+## 2026-10-07: milestone 6, second test: linked, but nothing reached Elden Ring
+- 0.6.1 linked fine; AoTTG2 showed only the soldier, HUD and minimap on magenta (user screenshot).
+  But "composited 0": BepInEx warned the WaitForEndOfFrame coroutine had an "unsupported return
+  type"; it never ran. Host: "missing 300" frames. SetResolution also re-centred AoTTG2's window
+  over Elden Ring.
+- 0.6.2: no coroutine. Each Update publishes the previous frame's capture and calls
+  ScreenCapture.CaptureScreenshotIntoRenderTexture for this frame (one frame late, HUD included);
+  rows flipped by default (Direct3D capture is upside down per Unity docs; to verify by screenshot).
+- 0.6.2 `Overlay.cs`: while compositing, AoTTG2's window becomes borderless, layered at 1/255
+  opacity, topmost, exactly over Elden Ring's client area (follows it), and gets the focus, so
+  input goes to AoTTG2 while you look at Elden Ring. Restored on F6/F7.
+
+## 2026-10-07: milestone 6 third test; switched to Tarnished mode
+- 0.6.2: overlay worked (AoTTG2 window invisible over Elden Ring, input fine), guest published
+  6670+ frames (read 2.7 ms, key 1.4 ms), but the host showed "missing" for every frame: it had
+  mapped `Local\AoER_frames_v1` at 15:50 during the crashed 0.6.0 session and kept that orphaned
+  section; the restarted AoTTG2 created a new one under the same name (live peek: slots valid,
+  poseIds 8047-8049, control mcFrame 8051; host gpu word 0 = never uploaded). Fix not done yet:
+  re-open the mapping when latestFrameId stalls for 2 s and reset g_lastUploaded.
+- User decision: work on Tarnished mode instead (no toggle for now; soldier mode later).
+- Tarnished mode v1 (host core hot-reloaded, plugin 0.7.0):
+  - protocol: ErmcControl grows to 0x70 with stickX, stickY, padButtons; flag
+    ERMC_CTRL_VIRTUAL_PAD (1<<10).
+  - host `input.cpp`: MinHook on xinput1_4!XInputGetState (Elden Ring has XINPUT1_4, DINPUT8,
+    HID loaded); while the flag is set and control frames are fresh (< 500 ms), pad 0 gets the
+    virtual left stick added (reported connected if no real pad).
+  - stand_in in pad mode: NoMove cleared (the game's locomotion runs and animates), position still
+    pinned every tick, facing left to the game.
+  - guest: stick = hero ground velocity relative to the camera's flattened forward; tilt 0.35 at
+    0.5 m/s rising to 1.0 at 5 m/s; centred in the air or below 0.5 m/s. Soldier drawing no longer
+    starts on link; F6 removed (Compositor/Overlay code kept, unused).
+
+## 2026-10-07: Tarnished mode v1 test: idle only, facing frozen; a display driver reset
+- User: Tarnished stays in idle and never turns; at the end something crashed, the monitor went
+  dark and came back (likely a display driver reset; host.log has no fault, nothing in runtime/).
+- Logs: guest sent stick tilts (0.55 at 2 m/s, 1.0 running) with VIRTUAL_PAD; host never logged
+  "virtual controller active": Elden Ring never called the hooked XInputGetState during the link.
+  eldenring.exe imports xinput1_4 by ordinal 2 and 3 = XInputGetState / XInputSetState (verified
+  same addresses as the named exports). No real controller is connected (pad 0 -> 1167).
+- Facing froze because pad mode stopped writing the quaternion while the game got no input.
+- Now (core only, not yet tested): XInputGetCapabilities hooked to report pad 0 connected while the
+  virtual pad is wanted; 5 s diagnostics (calls per pad, caps calls, virtual stick served, whether
+  Elden Ring's window has the focus); pad mode (NoMove off, no facing write) only once the game
+  actually reads the virtual pad.
+
+## 2026-10-07: virtual pad diagnosis; crosshair
+- Diagnostics: Elden Ring called XInputGetState only at start-up (pad0 x4, pads1-3 x12, i.e. 4
+  probe rounds), then 0 calls per 5 s for the whole link; GetCapabilities 0; its window was never
+  focused. So it stops polling when no pad is present at start-up. Facing is fine again (pad mode
+  now only once the game reads the pad).
+- Host (built, needs an Elden Ring restart): while the pad is wanted and unpolled, post
+  WM_DEVICECHANGE / DBT_DEVNODES_CHANGED to the game window every 5 s, so it re-probes; with
+  GetCapabilities reporting pad 0 connected it should start reading it. Untested.
+- Crosshair: ERMC_CTRL_CROSSHAIR (1<<11) and aimDist (control 0x74 now); the compositor draws
+  four ticks and a dot at the screen centre without needing any AoTTG2 frames (same path as the
+  test pattern), green when aimDist > 0. Guest 0.7.1 raycasts from the camera centre against the
+  collision copy and enemy boxes (120 m). Shaders compile-checked offline with d3dcompiler_47
+  (.local/shadercheck.py). First attempt used `cross` as a variable name (an HLSL intrinsic).
+- A hot reload at 16:29:26 got "core: shutdown" and no more log; Elden Ring was not running
+  afterwards. The log shows "alive -> none" at 16:29:18, so the game may already have been closing.
+  Unclear whether the reload caused it. No crash file.
+
+## 2026-10-07: two NVIDIA driver resets traced; compositor off; crosshair as an overlay window
+- Windows event log: "Display driver nvlddmkm stopped responding and has successfully recovered"
+  (4101, with nvlddmkm 153) at 16:15:30 and 17:11:02; Elden Ring then faulted in nvwgf2umx.dll
+  (17:11:42). Both happened only after the D3D12 compositor was enabled (15:30); ~2 h of earlier
+  two-game testing with it off had none. The second came as the user spawned in AoTTG2 (VRAM
+  pressure on an RTX 2060 may contribute). Suspect: the compositor's per-frame hooks on Elden
+  Ring's command queue (ExecuteCommandLists / ResourceBarrier / Reset, depth tracking).
+- Elden Ring also faulted in eldenring.exe at 16:29:26, the exact second of the hot reload: the
+  reload caused that crash. Policy now: no hot reloads into a running game; restart instead.
+- Earlier eldenring.exe faults at 14:49, 14:53, 15:45 line up with the user closing the game:
+  likely a crash on exit with the bridge loaded. To look into.
+- AOER_COMPOSITOR back to 0. Plugin 0.7.2: `CrosshairWindow.cs`, a 33 px layered, click-through,
+  topmost, no-activate window of our own over the centre of Elden Ring's client area (white, green
+  when the camera-centre ray hits the copy or an enemy box within 120 m). It never touches Elden
+  Ring's rendering. Untested.
+
+## 2026-10-07: crosshair works; virtual pad dead end; animation by request; cables overlay
+- User: crosshair window works (white/green correct), ODM controls "great". No blackouts with the
+  compositor off. Still idle-only animation; no controller prompts.
+- Host log: 38 WM_DEVICECHANGE announcements, still 0 XInputGetState calls. The virtual pad route
+  is dropped (code kept, inert).
+- New route from fromsoftware-rs (vswarte, 59fbd3b, MIT; cloned to ref/): ChrInsModuleContainer
+  (data 0x00, time_act 0x18, event 0x58, physics 0x68 = matches the host's kModPhysics),
+  CSChrEventModule.request_animation_id (+0x18, "override animation to play next frame") and
+  idle_anim_id (+0x1C), CSChrTimeActModule anim queue (+0x20, 10 x 16 bytes) and read_idx (+0xC4).
+- Host (needs a restart): state grows to 0x120 with animId / animRequest / idleAnimId; control grows
+  to 0x78 with requestAnim (>0 play, 0 back to idle, -1 leave alone). drive_animation in the
+  stand-in re-requests only when the current animation differs. Every module pointer is validated
+  by its owner field (+0x08 == the ChrIns) before use.
+- `tools/erctl.py anim` + `Anim-Recorder.bat`: logs each animation change with ground and vertical
+  speed, to learn this character's walk/run/sprint/jump/fall ids. Plugin sends -1 for now.
+- Plugin 0.7.3: `CableOverlay.cs`, a click-through layered window over Elden Ring's client area
+  drawing grey lines from the hero's waist to each hook that is flying or attached
+  (HookUseable.IsHooking/IsHooked, GetHookPosition), projected with the shared camera and
+  Elden Ring's aspect. Untested.
+
+## 2026-10-07: cables work; animation ids recorded; Tarnished animations by request
+- User: grey cable lines go out correctly (CableOverlay works).
+- `runtime/anim-20261007-175157.csv` (80 changes): standing 20120 (0 at start); jog 22100
+  (~3 m/s); sprint 20220 (held 4 s); roll 27120; jump 202020 -> 202040 (air) -> 202115 (land);
+  ledge fall 4050 -> 4000 -> 4220 (hard landing). Event idle_anim_id is 63000 (never seen while
+  standing in the world).
+- Plugin 0.8.0 `TarnishedAnim.cs`: grounded speed bands with hysteresis (stand < 0.4, jog,
+  sprint > 5.5 / back to jog < 4.5 m/s); airborne after 0.15 s off the ground -> 202040. Requests
+  are sent in control.requestAnim; the host re-requests only when the current animation differs.
+  Untested: whether the event override plays while the stand-in sets NoMove, and whether the
+  locomotion animations loop on their own.
+
+## 2026-10-07: event-animation route does not drive locomotion
+- 0.8.0 test: plugin picked Stand/Jog/Sprint/Air correctly; host wrote 48 requests; every log line
+  says "was 0" and the user saw only idle.
+- `tools/ermem.py` (debug mailbox READ/WRITE, player modules validated by owner): event and
+  time-act modules found where fromsoftware-rs says. Unlinked, a written request (27120, roll) is
+  consumed (field back to -1) and copied into the next field (+0x1C, "idle_anim_id"), while the
+  time-act queue keeps showing anim 0 (length 3.0, the standing idle after loading). The +0x1C
+  value had become 20120 after the link: our Stand requests. So this field pair behaves like an
+  event/idle override, not "play this animation now"; locomotion ids (2xxxx) are not played.
+  Earlier during normal play +0x1C was 63000.
+- Conclusion: forcing Elden Ring's locomotion animations needs more reverse engineering (the pad
+  manipulator's movement vector, or the behaviour/HKS request path). Options put to the user.
+
+## 2026-10-07: option B feasibility build (play from Elden Ring's window)
+- User chose option B for a small feasibility test and wants Elden Ring's attacks and rolls kept.
+- Plugin 0.9.0 `BackgroundInput.cs`: active while linked (full mode) and the foreground window
+  belongs to Elden Ring's process (Bridge.HostPid). Harmony prefixes on Settings.InputKey
+  GetKey/GetKeyDown/GetKeyUp (all AoTTG2 keybinds) answer from GetAsyncKeyState with per-frame
+  edges and modifier support (Unity KeyCode -> VK table); Input.GetAxis/GetAxisRaw for
+  "Mouse X/Y/ScrollWheel" answer from raw mouse input (message-only window, RIDEV_INPUTSINK, 0.1
+  per pixel / per notch, Y negated); Input.GetMouseButton*/Application.isFocused answer as focused.
+  Once the raw reader runs, mouse axes always come from it (one raw-input registration per process).
+- Event-animation requests switched off (requestAnim -1).
+- Host (needs a restart): ERMC_CTRL_GAME_INPUT (1<<12): stand-in leaves NoMove off and stops
+  writing facing, so Elden Ring's own movement animates the Tarnished; position still pinned.
+- Untested: whether AoTTG2's keybinds and camera really follow, whether pinning fights Elden Ring's
+  root motion (jitter), how jump/ODM keys interact with Elden Ring's own bindings.
+
+## 2026-10-07: option B works
+- 0.9.0: patches installed and switching worked, but the hero didn't move from Elden Ring's window.
+- 0.9.1 counters (5 s windows, Elden Ring in front): KeybindSetting 10k-13k calls (110-636
+  answered pressed), InputKey 253-300, Unity Input.GetKey 759-900, axes 759-900, mouse buttons 0,
+  isFocused 0. So AoTTG2 reads keybinds through KeybindSetting.GetKey/Down/Up(bool), with InputKey
+  largely inlined into it; patching that layer made movement and hooks work.
+- User: Tarnished animations play while the character moves; hero up to 36 m/s; 9 hooks fired
+  from Elden Ring's window. "Kinda clunky but working". Elden Ring attacks/rolls left on.
+- Likely clunkiness: Elden Ring's root motion moves the Tarnished between our pins (sawtooth),
+  run animation slower than AoTTG2's speed (foot sliding), ground animations while airborne.
+  Candidate fixes from fromsoftware-rs: CSChrBehaviorDataModule.hks_root_motion_mult (0 = no root
+  motion) and hks_animation_speed_multiplier (match AoTTG2 speed).
+
+## 2026-10-07: option B feel: foot sliding, running in mid-air, facing
+- User: foot sliding (hero much faster than Elden Ring's run cycle), running/walking animation in
+  mid-air, and odd facing from Elden Ring's window (fine when AoTTG2 is focused).
+- Facing cause (likely): Elden Ring turns toward its input relative to its own internal camera; we
+  only replace the rendered camera, so its "forward" drifts. Fix: the stand-in always writes the
+  hero's facing in game-input mode.
+- fromsoftware-rs offsets, cross-checked (physics 0x50/0x70/0x91 match the host's constants):
+  physics motion_multiplier 0x1C4, is_falling 0x1D0; behaviour module (slot 0x28)
+  animation_speed 0x17C8; fall module (slot 0x70) fall_timer 0x18.
+- Host (restart needed): game-input mode sets motion_multiplier 0 (animations don't move the
+  Tarnished), animation_speed = control.animSpeed on the ground; with ERMC_CTRL_AIRBORNE (1<<13):
+  NoMove back on (no ground locomotion), is_falling = 1, fall_timer kept at 0. Restored to 1 on
+  release. Control grows to 0x7C with animSpeed.
+- Plugin 0.9.2: animSpeed = clamp(hero ground speed / 3.2 m/s, 0.6, 3.0); airborne after 0.15 s
+  off the ground. Untested: whether these writes survive Elden Ring's own per-frame updates.
+
+## 2026-10-07: walking/running/facing good; mid-air via Elden Ring's own jump
+- User: walk/run animations "look great", facing fixed. In the air the Tarnished just idles (the
+  is_falling write doesn't take), landing has no animation, no unexpected deaths. Pressing F
+  (Elden Ring's jump) mid-ODM plays a jump animation that "looks very fitting".
+- Plugin 0.9.3: while Elden Ring has the focus and the hero is airborne, tap F into Elden Ring
+  with SendInput (scan code 0x21) when the hero leaves the ground and again whenever the
+  Tarnished's animation is outside the jump range (202000-202999) while still airborne, at most
+  once per second. The tap is masked from AoTTG2's background key reader for ~160 ms. Elden
+  Ring's own landing should follow from its jump state. Only AoTTG2 needs a restart.

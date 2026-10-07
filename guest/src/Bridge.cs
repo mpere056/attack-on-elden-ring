@@ -14,6 +14,9 @@ namespace Aoer
         public float CX, CY, CZ;     // camera eye
         public float TX, TY, TZ;     // camera look-at point
         public uint Stage;           // zone id
+        public int WinX, WinY, WinW, WinH; // Elden Ring's client area on screen
+        public uint BackW, BackH;    // Elden Ring's swapchain size
+        public int AnimId;           // animation the Tarnished is playing, -1 unknown
         public bool PlayerValid => (Flags & Protocol.StatePlayerValid) != 0;
         public bool Busy => (Flags & Protocol.StateHostBusy) != 0;
         public bool Dead => (Flags & Protocol.StatePlayerDead) != 0;
@@ -74,20 +77,22 @@ namespace Aoer
         public static uint HostLife => _base == null ? 0 : Volatile.Read(ref U32(Protocol.HdrHostLife));
 
         private static ulong _controlFrame;
+        public static ulong LastControlFrame => _controlFrame;
 
         /// <summary>
         /// Publishes where the Tarnished should stand (Elden Ring stable frame, metres) and which way
         /// it faces. flags = 0 hands the Tarnished back to Elden Ring.
         /// </summary>
         public static void WriteControl(uint flags, float x, float y, float z, float unityYawDeg)
-            => WriteControl(flags, x, y, z, unityYawDeg, default, default, default, 0f);
+            => WriteControl(flags, x, y, z, unityYawDeg, default, default, default, 0f, 0f, 0f, 0);
 
         /// <summary>
         /// Same, plus a camera for Elden Ring to render from when flags has CtrlOverrideCamera:
         /// eye, look-at point and up vector in Elden Ring's stable frame, vertical FOV in degrees.
         /// </summary>
         public static void WriteControl(uint flags, float x, float y, float z, float unityYawDeg,
-                                        UnityEngine.Vector3 camPos, UnityEngine.Vector3 camTarget, UnityEngine.Vector3 camUp, float fovDeg)
+                                        UnityEngine.Vector3 camPos, UnityEngine.Vector3 camTarget, UnityEngine.Vector3 camUp, float fovDeg,
+                                        float stickX = 0f, float stickY = 0f, uint padButtons = 0, float aimDist = 0f, int requestAnim = -1, float animSpeed = 1f)
         {
             if (_base == null) return;
             byte* c = _base + Protocol.OffControl;
@@ -111,6 +116,12 @@ namespace Aoer
             float* cu = (float*)(c + Protocol.CtCamUp);
             cu[0] = camUp.x; cu[1] = camUp.y; cu[2] = camUp.z;
             *(float*)(c + Protocol.CtFov) = fovDeg;
+            *(float*)(c + Protocol.CtStickX) = stickX;
+            *(float*)(c + Protocol.CtStickY) = stickY;
+            *(uint*)(c + Protocol.CtPadButtons) = padButtons;
+            *(float*)(c + Protocol.CtAimDist) = aimDist;
+            *(int*)(c + Protocol.CtRequestAnim) = requestAnim;
+            *(float*)(c + Protocol.CtAnimSpeed) = animSpeed;
             Volatile.Write(ref seq, s + 2);             // even: done
         }
 
@@ -135,6 +146,10 @@ namespace Aoer
                 s.CX = F(copy, Protocol.StCamPos); s.CY = F(copy, Protocol.StCamPos + 4); s.CZ = F(copy, Protocol.StCamPos + 8);
                 s.TX = F(copy, Protocol.StCamTarget); s.TY = F(copy, Protocol.StCamTarget + 4); s.TZ = F(copy, Protocol.StCamTarget + 8);
                 s.Stage = *(uint*)(copy + Protocol.StStageId);
+                int* win = (int*)(copy + Protocol.StWin);
+                s.WinX = win[0]; s.WinY = win[1]; s.WinW = win[2]; s.WinH = win[3];
+                s.BackW = *(uint*)(copy + Protocol.StBackBuffer); s.BackH = *(uint*)(copy + Protocol.StBackBuffer + 4);
+                s.AnimId = *(int*)(copy + Protocol.StAnimId);
                 return a != 0;
             }
             return false;

@@ -28,8 +28,11 @@ namespace Aoer
         public const int StCamTarget = 0x1C;
         public const int StPlayerPos = 0x48;
         public const int StPlayerQuat = 0x54;
+        public const int StWin = 0x64;          // int x, y, w, h: Elden Ring's client area on screen
+        public const int StBackBuffer = 0x74;   // uint w, h
         public const int StStageId = 0x7C;
-        public const int StateSize = 0x114;
+        public const int StAnimId = 0x114;          // animation the Tarnished is playing
+        public const int StateSize = 0x120;
 
         public const int HdrHostLife = 0x58;       // +1 each time the Tarnished is usable again somewhere new
 
@@ -44,12 +47,23 @@ namespace Aoer
         public const int CtFov = 0x34;
         public const int CtHunterPos = 0x38;
         public const int CtHunterYawDeg = 0x58;
-        public const int ControlSize = 0x64;
+        public const int CtStickX = 0x64;           // virtual pad left stick (Tarnished mode)
+        public const int CtStickY = 0x68;
+        public const int CtPadButtons = 0x6C;
+        public const int CtAimDist = 0x70;          // crosshair: distance to a hookable surface, 0 = none
+        public const int CtRequestAnim = 0x74;      // Tarnished mode: animation to play, 0 idle, -1 leave alone
+        public const int CtAnimSpeed = 0x78;        // Tarnished animation speed multiplier
+        public const int ControlSize = 0x7C;
 
         public const uint CtrlOverrideCamera = 1u << 0;
         public const uint CtrlMoveHunter = 1u << 1;    // the Tarnished stands in at CtHunterPos
         public const uint CtrlHideHunter = 1u << 2;
+        public const uint CtrlComposite = 1u << 4;     // draw the frames mapping into Elden Ring's frame
         public const uint CtrlFlying = 1u << 9;        // no moving-platform tracking
+        public const uint CtrlVirtualPad = 1u << 10;   // Tarnished mode: Elden Ring animates from the stick
+        public const uint CtrlCrosshair = 1u << 11;    // Elden Ring draws a crosshair at the screen centre
+        public const uint CtrlGameInput = 1u << 12;    // Elden Ring has the focus: its own movement animates the Tarnished
+        public const uint CtrlAirborne = 1u << 13;     // the hero is in the air: falling state on the Tarnished
 
         public const uint StateCameraValid = 1u << 0;
         public const uint StatePlayerValid = 1u << 1;

@@ -25,7 +25,7 @@ OBJ.mkdir(parents=True, exist_ok=True)
 flags = ['--target=x86_64-w64-mingw32', '-O2', '-std=c++17', '-Wall', '-Wno-unknown-pragmas',
          '-DWIN32_LEAN_AND_MEAN', '-DNOMINMAX',
          '-I' + str(HOST / 'include'), '-I' + str(HOST / 'third_party/minhook/include')]
-cpp = ['loader', 'log', 'shm', 'core', 'crash', 'memutil', 'debugcmd', 'frame', 'game', 'compositor']
+cpp = ['loader', 'log', 'shm', 'core', 'crash', 'memutil', 'debugcmd', 'frame', 'game', 'compositor', 'input']
 
 
 def run(cmd):
@@ -52,7 +52,7 @@ for name in ['buffer.c', 'hook.c', 'trampoline.c', 'hde/hde64.c']:
 
 link = ['--target=x86_64-w64-mingw32', '-shared', '-static', '-s']
 objs = lambda names: [str(OBJ / f'{x}.o') for x in names]
-run([str(CXX), *link, *objs(['core', 'crash', 'log', 'shm', 'memutil', 'debugcmd', 'frame', 'game', 'compositor']),
+run([str(CXX), *link, *objs(['core', 'crash', 'log', 'shm', 'memutil', 'debugcmd', 'frame', 'game', 'compositor', 'input']),
      *mh, '-luser32', '-lkernel32', '-ld3d12', '-ldxgi', '-ldxguid', '-o', str(OUT / 'aoer_core.dll')])
 # The loader stays loaded while Elden Ring runs; it rarely changes. The core is hot-swappable
 # (python tools/erctl.py reload).

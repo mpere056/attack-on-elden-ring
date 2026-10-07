@@ -14,7 +14,7 @@ namespace Aoer
     public class Plugin : BasePlugin
     {
         public const string Guid = "aoer.bridge";
-        public const string Version = "0.5.0";
+        public const string Version = "0.9.3";
         internal static ManualLogSource L;
 
         public override void Load()
@@ -24,6 +24,7 @@ namespace Aoer
             var harmony = new Harmony(Guid);
             OfflineGuard.Apply(harmony, L);
             LongHooks.Patch(harmony);
+            BackgroundInput.Patch(harmony);
             try
             {
                 Bridge.Open();
@@ -44,6 +45,7 @@ namespace Aoer
 
         private float _nextLog;
         private bool _wasAlive;
+        private float _nextInputLog;
 
         private void Update()
         {
@@ -56,11 +58,18 @@ namespace Aoer
             Bridge.Beat();
             bool alive = Bridge.HostAlive();
             var hero = GetHero();
+            BackgroundInput.Update(Link.CollisionActive);
             Link.Update(alive, hero);
+            if (Compositor.Active)
+            {
+                try { Compositor.Tick(Bridge.LastControlFrame); Overlay.Tick(); }
+                catch (Exception e) { Plugin.L.LogError("compositor: " + e); Compositor.End(); }
+            }
 
             if (Time.unscaledTime < _nextLog) return;
             _nextLog = Time.unscaledTime + 1f;
             OfflineGuard.Check();
+            if (Time.unscaledTime >= _nextInputLog) { _nextInputLog = Time.unscaledTime + 5f; BackgroundInput.LogCounters(); }
 
             if (alive != _wasAlive)
             {

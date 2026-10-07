@@ -5,7 +5,7 @@
 #include "MinHook.h"
 
 #ifndef AOER_COMPOSITOR
-#define AOER_COMPOSITOR 1  // milestone 6
+#define AOER_COMPOSITOR 0  // off: its D3D12 hooks coincided with two NVIDIA driver resets (MODLOG)
 #endif
 
 namespace mb {
@@ -43,6 +43,7 @@ static DWORD WINAPI worker(LPVOID) {
             compositor_depth_poll();
         }
         game_worker_poll();
+        input_poll();
         Sleep(1);
     }
     return 0;
@@ -73,6 +74,7 @@ extern "C" __declspec(dllexport) bool erb_core_init() {
     // Compositing (drawing AoTTG2's frame into Elden Ring's) arrives in milestone 6. Until then
     // the Present hooks are not installed at all.
     if (ok && AOER_COMPOSITOR) compositor_init();
+    if (ok) input_init();
     g_stop = 0;
     g_worker = CreateThread(nullptr, 0, worker, nullptr, 0, nullptr);
     g_pacer = CreateThread(nullptr, 0, pacer, nullptr, 0, nullptr);
