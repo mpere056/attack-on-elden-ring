@@ -49,8 +49,8 @@ Each ends with a playtest by the user. Do not start the next before the last one
 | 1 | **Raycast range test**: host DLL loads under me3, logs, and answers rays from `tools/erctl.py` | Whether ER has collision far enough away for ODM hooks. Decides if route 1 is viable |
 | 2 | AoTTG2 plugin loads, forces offline, opens the shared memory, logs the Tarnished's position | The link works |
 | 3 | AoTTG2's hero position drives the Tarnished (gravity off) | Ownership works |
-| 4 | AoTTG2 hooks anchor on ER rays | ODM gear in the Lands Between |
-| 5 | Collision around and ahead of the player | Flying without clipping |
+| 4 | Collision mirror: Elden Ring's ground and walls copied into AoTTG2 around the player; AoTTG2's map collision off while linked | Walking and nearby hooks on Elden Ring's world |
+| 5 | Long-range hooks: AoTTG2 hooks beyond the mirrored area anchor on Elden Ring rays | ODM gear across the Lands Between |
 | 6 | AoTTG2's hero, cables, blades and HUD composited into ER's frame | It looks like one game |
 | 7 | Blade hits damage ER enemies; ER hits hurt the AoTTG2 hero | Combat |
 | 8 | (Optional) AoTTG2 titans in the Lands Between | The full fantasy |
@@ -59,7 +59,7 @@ Each ends with a playtest by the user. Do not start the next before the last one
 
 1. **Collision reach** (milestone 1): **measured.** Hits out to 355 m in Stormveil and 177 m in
    the open world, answered within one frame. A longer open-field survey is still wanted.
-2. **ODM speed vs collision sampling** (milestone 5). Sample ahead along velocity; ValCraft's
+2. **ODM speed vs collision sampling** (milestone 4). Sample ahead along velocity; ValCraft's
    hold-and-keep-momentum trick from guide 16 is the fallback.
 3. **Hidden Unity rendering and input** (milestone 6). AoTTG2's window must not need focus; input
    comes through shared memory.

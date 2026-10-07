@@ -33,3 +33,96 @@
 - Hits up to 355 m; ray round trip one frame; 250-ray sweep in one frame; tick 0.3 ms; 60 fps.
 - Inherited behaviour noticed in host.log: upstream patches AtkParam_Pc row 10176000 in memory
   ("poke attack") for hit reactions. In-memory only, offline; keep in mind for combat.
+
+## 2026-10-07: milestone 2, AoTTG2 plugin
+- `guest/`: AoerBridge BepInEx plugin (Plugin.cs, Bridge.cs, Protocol.cs, OfflineGuard.cs).
+- `tools/build_guest.py`, `Play-AoTTG2.bat`. Inspector for interop names lives in `.local/` (not tracked).
+- Built and installed into AoTTG2. Not tested in game.
+
+## 2026-10-07: milestone 2 passed
+- Both games ran together; positions logged in AoTTG2's BepInEx log; 17 connect methods patched;
+  AoTTG2 single player made no connect attempts.
+
+## 2026-10-07: milestone 3, puppet link
+- `guest/src/Link.cs`: F7 links the Tarnished to AoTTG2's hero via the control block.
+- `Bridge.WriteControl` (seqlock writer), protocol offsets for the control block and hostLife.
+- Plugin 0.3.0 built and installed. Not tested in game.
+
+## 2026-10-07: milestone 3 passed; milestones 4 and 5 swapped
+- Puppet link works (see STATUS). Collision moved ahead of long-range hooks: with Elden Ring's
+  collision copied into AoTTG2, walking and nearby hooks work through AoTTG2's own code.
+
+## 2026-10-07: milestone 4, collision mirror
+- `TerrainMirror.cs`, `Rays.cs`; Link gains a preparing phase. Plugin 0.4.0 installed. Not tested.
+
+## 2026-10-07: milestone 4, first test failed (fell through)
+- Rays fine: 3x3 tiles in 0.2-0.35 s, 49-56 tiles kept, batches 35-153 ms. Hero still fell
+  through: mirror was on layer MapObjectEntities (23), copied from AoTTG2's trees.
+- 0.4.1: mirror on `Utility.PhysicsLayer.MapObjectAll`; ground check before switching (ray down
+  must hit a tile and the hero's layer must collide with it, otherwise the link is cancelled
+  before anything moves); floor/top hit and triangle counts logged.
+
+## 2026-10-07: milestone 4, second test: safety check cancelled correctly
+- Copy was right (18 tiles, ~4460 floor hits, ~28k triangles, ground 0.00 m under the hero), but
+  hero layer Human (10) does not collide with MapObjectAll (24) in AoTTG2's collision matrix.
+- 0.4.2: `ChooseLayer` asks AoTTG2 (Physics.GetIgnoreLayerCollision with the hero's layer, and the
+  static `Characters.Hook.HookMask`) and takes the first map layer the hero collides with and
+  hooks can catch (MapObjectCharacters first). Candidates are logged.
+
+## 2026-10-07: milestone 4, third test: still cancelled
+- Layer matrix says Human (10) collides with none of the map layers, yet the hero stands on
+  branches: AoTTG2 must use per-collider/rigidbody include/exclude overrides (Unity 2022.2+).
+  Note: the very first test built its first tiles on layer 0 (layer was only set later), so
+  MapObjectEntities was never really tried.
+- 0.4.3: layer = whatever the hero is standing on (RaycastAll under the feet) if it passes
+  the full collide test (matrix + include/exclude of the hero's rigidbody and colliders), then
+  map layers, then any layer. Hero physics settings logged. If the ground check still fails,
+  F7 links in puppet mode (milestone 3 behaviour) instead of doing nothing.
+
+## 2026-10-07: milestone 4, fourth test: puppet fallback worked
+- Hero: one CapsuleCollider on Human (10), no include/exclude overrides. Standing on `tree0`,
+  layer MapObjectEntities (23), although the matrix says 10 ignores 23. So AoTTG2 grounds its
+  hero with its own queries against map layers; the matrix check was the wrong test, and the
+  check ray hit tree0 (same layer, AoTTG2 map still on) instead of our tile.
+- 0.4.4: ground check passes if the copy uses the layer under the hero's feet (or the matrix
+  collides) and a copied tile (not an AoTTG2 object) is within -1.5..3 m under the hero.
+
+## 2026-10-07: milestone 4, first full-mode run
+- Ground check passed (copy on MapObjectEntities, tile 0.02 m under the hero). ~70 s linked:
+  climbed from y 94 to 158 over ~140 m on Elden Ring's terrain; 60-80 tiles kept; batches
+  7-195 ms; peak hero speed 108 m/s; sent vs reported within a few cm.
+- Then fell through while descending a slope near (10974, 128, 9725): quads with corners more
+  than 1.2 m apart were skipped, leaving holes on steep rock. Elden Ring reloaded the Tarnished
+  (hostLife), which ended the link as designed. User closed both games.
+- 0.4.5: no height limit on ground quads; floor falls back to the top ray when that is below the
+  player's level; tiles re-sampled at 5 m height change (was 12); rescue net puts the hero back on
+  the copy if it is 3-40 m under it (counted and logged).
+
+## 2026-10-07: milestone 4, second full-mode run
+- Long run with ODM (peak 57 m/s, 271 batches, 0 rescues), unlinked with F7 at the end.
+- Fall-through analysed live with erctl rays: a pit (ground ~64) beside ground at ~92. From the
+  pit, the ceiling ray started inside the hill and hit the hill's top from below, so the pit wall
+  became a 1 m slab at the top (hollow wall); the hero walked into the hill. The rescue net used
+  the same wrong floor, so it never fired.
+- 0.4.6: a column rising above the player's level is solid from far below to its top unless
+  there is open ground at the player's level with >1.8 m headroom under the ceiling hit (a real
+  overhang); solid columns use their top as the floor (mesh + rescue). Solid columns counted.
+- 0.4.6: Elden Ring's camera follows AoTTG2's camera while linked (ERMC_CTRL_OVERRIDE_CAMERA:
+  eye, eye + forward, up, vertical FOV), so steering matches the view. User feedback that drove
+  this: controls felt clunky because the views differed.
+- Known, by design until milestone 6: the Tarnished glides (puppet, no animation); it will be
+  hidden and the AoTTG2 soldier drawn instead.
+- Play-AoTTG2.bat now copies dist/guest/AoerBridge.dll into the plugins folder before starting
+  (the DLL is locked while AoTTG2 runs).
+
+## 2026-10-07: milestone 4, third full-mode run (0.4.6): good
+- User: "everything is working way better", camera sync "so much better", lots of ODM use, no
+  fall-through. 5 rescues at ~(11135, 9679): false positives in a cave. The area was sampled from
+  outside (higher yRef) so its columns were solid; walking down into the cave put the hero 26-28 m
+  "under" them. Peak speed 502 m/s is the rescue teleport, not real movement.
+- Live entity table check: 24 enemies within ~80 m, world-aligned hitboxes, hp/maxHp present.
+- 0.4.7: rescue only while falling (vertical speed below -6 m/s).
+- 0.4.7: `EnemyProxies.cs`: a BoxCollider per published Elden Ring enemy (hitbox centre and size,
+  rotation unless world-aligned), on the terrain copy's layer so hooks catch them, updated every
+  Elden Ring tick, removed when gone or dead. Not tested.
+- Still by design until milestone 6: the Tarnished glides (puppet, no animation).
