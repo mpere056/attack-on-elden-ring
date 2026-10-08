@@ -88,3 +88,7 @@ the Tarnished, hiding AoTTG2's own map visuals, an invisible input window over E
 - Compositor (soldier mode) off since two NVIDIA driver resets; virtual pad and event-animation
   routes kept but inert (see MODLOG).
 - Next candidates: hide the overlays over Elden Ring menus; blade hits on enemies (milestone 7).
+
+**AI assistant (2026-10-08): moved to https://github.com/mpere056/game-assistant.** Phase 1 done
+there (Elden Ring adapter 9/9 PASS through this bridge). This repository keeps only the bridge
+side: the assistant ray block in `aoer_core.dll`.

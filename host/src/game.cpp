@@ -2297,26 +2297,22 @@ bool game_debug_fire_shell(uint32_t, const float*, const float*, uint64_t*) {
     return false;  // attacks come in a later stage
 }
 
-static void service_rays(void* ignore) {
-    if (g_dbgRayState == 1) {
-        uint32_t f = (g_dbgRayFlags & ERMC_RAYS_CUSTOM_FILTER) ? g_dbgFilter : kDefaultRayFilter;
-        raycast(g_dbgRayStart, g_dbgRayEnd, f, (g_dbgRayFlags & ERMC_RAYS_HIT_SELF) ? nullptr : ignore, &g_dbgRayHit);
-        InterlockedExchange(&g_dbgRayState, 2);
-    }
-    ErmcRayHeader* h = shm_rays();
+// One request/response ray block (ErmcRayHeader layout), served within 1/budgetDiv of a second
+// per frame; a batch that doesn't fit continues next frame.
+static void serve_ray_block(ErmcRayHeader* h, uint32_t maxRays, uint32_t offHits, void* ignore, LONGLONG budgetDiv) {
     uint32_t req = h->reqSeq;
     if (req == h->respSeq) return;
     __asm__ __volatile__("" ::: "memory");
-    uint32_t count = h->count < ERMC_MAX_RAYS ? h->count : ERMC_MAX_RAYS;
+    uint32_t count = h->count < maxRays ? h->count : maxRays;
     uint32_t done = h->processed;
     if (done > count) done = 0;
     const ErmcRay* rays = (const ErmcRay*)((uint8_t*)h + ERMC_RAYS_OFF_RAYS);
-    ErmcRayHit* hits = (ErmcRayHit*)((uint8_t*)h + ERMC_RAYS_OFF_HITS);
+    ErmcRayHit* hits = (ErmcRayHit*)((uint8_t*)h + offHits);
     uint32_t filter = (h->flags & ERMC_RAYS_CUSTOM_FILTER) ? h->filterA : kTerrainRayFilter;
     LARGE_INTEGER fq, t0, t;
     QueryPerformanceFrequency(&fq);
     QueryPerformanceCounter(&t0);
-    const LONGLONG budget = fq.QuadPart / 500;  // ~2 ms per frame
+    const LONGLONG budget = fq.QuadPart / budgetDiv;
     while (done < count) {
         raycast(rays[done].start, rays[done].end, filter, ignore, &hits[done]);
         done++;
@@ -2331,6 +2327,16 @@ static void service_rays(void* ignore) {
         h->respSeq = req;
         h->processed = 0;
     }
+}
+
+static void service_rays(void* ignore) {
+    if (g_dbgRayState == 1) {
+        uint32_t f = (g_dbgRayFlags & ERMC_RAYS_CUSTOM_FILTER) ? g_dbgFilter : kDefaultRayFilter;
+        raycast(g_dbgRayStart, g_dbgRayEnd, f, (g_dbgRayFlags & ERMC_RAYS_HIT_SELF) ? nullptr : ignore, &g_dbgRayHit);
+        InterlockedExchange(&g_dbgRayState, 2);
+    }
+    serve_ray_block(shm_rays(), ERMC_MAX_RAYS, ERMC_RAYS_OFF_HITS, ignore, 500);  // guest: ~2 ms per frame
+    serve_ray_block(shm_assist_rays(), AOER_ASSIST_MAX_RAYS, AOER_ASSIST_OFF_HITS, ignore, 1000);  // assistant: ~1 ms
 }
 
 // ---------------------------------------------------------------------------------------

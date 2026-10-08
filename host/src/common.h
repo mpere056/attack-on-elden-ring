@@ -31,6 +31,7 @@ ErmcControl* shm_control();
 ErmcCmdBlock* shm_cmd();
 uint8_t* shm_cmd_resp();
 ErmcRayHeader* shm_rays();
+ErmcRayHeader* shm_assist_rays();  // AoER assistant ray block (AOER_OFF_ASSIST_RAYS)
 ErmcEntityTable* shm_entities();
 ErmcPassageTable* shm_passages();
 ErmcPlatformTable* shm_platforms();

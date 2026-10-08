@@ -301,6 +301,13 @@ typedef struct ErmcRayHeader {
 #define ERMC_RAYS_OFF_RAYS 0x20u
 #define ERMC_RAYS_OFF_HITS (ERMC_RAYS_OFF_RAYS + ERMC_MAX_RAYS * 24u)
 
+/* AoER assistant: a second, smaller ray block with the same layout (ErmcRayHeader, then rays,
+ * then hits), so the AI assistant's queries never collide with the guest's terrain batches.
+ * Served after the guest's block, within its own ~1 ms per frame. */
+#define AOER_OFF_ASSIST_RAYS 0x360000u
+#define AOER_ASSIST_MAX_RAYS 1024u
+#define AOER_ASSIST_OFF_HITS (ERMC_RAYS_OFF_RAYS + AOER_ASSIST_MAX_RAYS * 24u)
+
 /* Hittable ER entities (monsters etc.), republished every frame. Each gets an invisible
  * proxy entity in Minecraft with the same hitbox, so Minecraft attacks can target it. */
 #define ERMC_MAX_ENTITIES 256
@@ -452,4 +459,6 @@ static_assert(sizeof(ErmcTerrainContact) == 32, "terrain contact size");
 static_assert(ERMC_OFF_CONTACTS + sizeof(ErmcTerrainContacts) <= ERMC_OFF_COLLISION_CONTROL, "contacts fit");
 static_assert(sizeof(ErmcCollisionControl) == 48, "collision control size");
 static_assert(ERMC_OFF_COLLISION_CONTROL + sizeof(ErmcCollisionControl) <= ERMC_SHM_SIZE, "collision control fits");
+static_assert(ERMC_OFF_COLLISION_CONTROL + sizeof(ErmcCollisionControl) <= AOER_OFF_ASSIST_RAYS, "assistant rays after collision control");
+static_assert(AOER_OFF_ASSIST_RAYS + AOER_ASSIST_OFF_HITS + AOER_ASSIST_MAX_RAYS * 32u <= ERMC_SHM_SIZE, "assistant rays fit");
 #endif

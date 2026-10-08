@@ -405,3 +405,41 @@
   while a hook is flying/attached and until the hero lands; 1 otherwise (plain jumps and walking
   untouched); restored on unlink; left alone when AoTTG2 has paused (timeScale ~0).
 - Crosshair position low-pass filtered (~40 ms), jumps > 120 px taken at once. Untested.
+
+## 2026-10-08: AI assistant, phase 1 built (adapter, look-at, spending cap)
+- Plan of record in `docs/assistant/` (README, PLAN, ADAPTER), matching the three shared design
+  docs. Decisions: one core, one adapter per game (Elden Ring first, Minecraft later); Claude
+  Haiku 5.5 for talking/routing/vision, Sonnet 5.5 for writing skills, code for anything fast;
+  $3/hour spending cap; text first, push-to-talk voice with local speech models soon after.
+- Host: a second ray block for the assistant (`AOER_OFF_ASSIST_RAYS` 0x360000, 1024 rays, ~1 ms
+  per frame) so its queries never collide with the AoTTG2 plugin's terrain batches. The ray loop
+  became `serve_ray_block()`, used for both blocks. Built; not run in game yet.
+- `assistant/`: interface (snapshot, camera with forward/right/up, entities, raycast, knowledge),
+  look-at resolver (game target, then entities by angle to the crosshair with visibility rays, then
+  the surface straight ahead), spending guard, Elden Ring adapter (reads state, entities and the
+  assistant ray block), live adapter tests (`Check-Assistant.bat`, `--look` for a live readout)
+  and a Haiku latency test (`Measure-Haiku.bat`). 12 offline tests pass. Nothing tested in game.
+- Python environment: `.tools/venv` with `anthropic` 1.12.1. No API key on this machine yet.
+
+## 2026-10-08: assistant adapter tests pass in game: Elden Ring connected
+- `Check-Assistant.bat`: 9/9 PASS (runtime/assistant-adapter-check-20261008-180548.txt). Bridge live,
+  12 characters published; ground ray -0.02 m from the feet, answered in 10 ms; left/right correct
+  (so Elden Ring is left-handed as assumed); look-at named c3661 (NpcParam 36616040) at 10.7 m,
+  confidence 0.9. The assistant ray block in the rebuilt aoer_core.dll works.
+- Still open for phase 1: the Haiku latency test (waiting for the user's API key).
+
+## 2026-10-08: Haiku 5.5 speed measured: phase 1 gate passed
+- `Measure-Haiku.bat` (runtime/assistant-haiku-latency-20261008-181630.txt), 5 runs each, streaming:
+  answer from facts: first word 641 ms median with thinking off, 524 ms with adaptive thinking at
+  low effort (whole reply ~1.1 s); tool call: 596 ms off, 551 ms adaptive/low; look_at called 5/5.
+  Answers used only the given facts and said what they didn't know. 20 calls cost $0.0011.
+- Choice: adaptive thinking at low effort (as fast or faster, steadier). About $0.00006 per call.
+- Key setup note: setx only reaches windows opened afterwards; the latency tool now says so
+  instead of a misleading "no key found".
+
+## 2026-10-08: AI assistant moved to its own repository
+- The assistant covers several games, so it now lives in https://github.com/mpere056/game-assistant
+  (code, docs, tools, test results). Removed here: `assistant/`, `docs/assistant/`,
+  `Check-Assistant.bat`, `Measure-Haiku.bat`, `.tools/venv`.
+- Kept here: the bridge's assistant ray block (`AOER_OFF_ASSIST_RAYS`, `serve_ray_block()`), which
+  the assistant's Elden Ring adapter uses. Its contract entry now points to the new repository.

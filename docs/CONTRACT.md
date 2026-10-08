@@ -41,6 +41,7 @@ Live passthrough (state exchange) + frame compositing. See `DESIGN.md`.
 | Game state (Tarnished, camera, zone) | seqlock snapshot | ER → AoTTG2 | per ER frame | Reader keeps last good value |
 | Control (hero pose, camera, flags) | seqlock snapshot | AoTTG2 → ER | per AoTTG2 frame | ER keeps last pose |
 | Rays | request/response batch | AoTTG2 → ER → AoTTG2 | on demand, ~2 ms ER budget per frame | Partial batches resume next frame |
+| Assistant rays | request/response batch, same layout, 1024 rays at `AOER_OFF_ASSIST_RAYS` | AI assistant → ER → assistant | on demand, ~1 ms ER budget per frame | Partial batches resume next frame |
 | Entities | seqlock table | ER → AoTTG2 | per ER frame | |
 | Damage | ring buffer | AoTTG2 → ER | events | Writer drops and counts when full |
 | Frames | triple-buffered images | AoTTG2 → ER | per AoTTG2 frame | Prefer matching pose, then older, then last; count each |
@@ -61,6 +62,10 @@ Live passthrough (state exchange) + frame compositing. See `DESIGN.md`.
 - ER dies or closes: AoTTG2 hero freezes.
 - On loading or zone change: AoTTG2 freezes until ER reports the Tarnished usable, then is
   re-placed on it.
+
+## AI assistant ([Game Assistant](https://github.com/mpere056/game-assistant))
+- Reads the state block, the entity table and the header; casts rays only through its own block.
+- Writes nothing else into the bridge. From phase 3 it sends input, never memory writes.
 
 ## Not covered
 - Online anything. AoTTG2 multiplayer is blocked.
