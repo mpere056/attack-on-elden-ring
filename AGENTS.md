@@ -5,6 +5,9 @@ Attack on Elden Ring: a passthrough mod that runs Attack on Titan Tribute Game 2
 alongside Elden Ring. AoTTG2 supplies the player's ODM gear movement and blade combat; Elden Ring
 draws the world, runs the enemies and owns health, death and menus.
 
+The AI game assistant lives in its own repository, https://github.com/mpere056/game-assistant.
+This bridge serves it a separate ray block (`AOER_OFF_ASSIST_RAYS`); keep that working.
+
 ## Hard rules, never break these
 
 1. **Never write game assets, decompiled code, or extracted game files into this repository.**

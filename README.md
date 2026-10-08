@@ -34,6 +34,11 @@ files are included: you need your own copies of both games.
 
 See `docs/DESIGN.md` for the plan and `docs/STATUS.md` / `MODLOG.md` for test results.
 
+## AI assistant
+The bridge also serves [Game Assistant](https://github.com/mpere056/game-assistant), an AI
+assistant you talk to while you play (its Elden Ring adapter reads this bridge, with its own ray
+channel). The assistant itself lives in that repository.
+
 ## Requirements
 Full list with exact versions, download links, checksums and licences: **[docs/COMPATIBILITY.md](docs/COMPATIBILITY.md)**.
 
