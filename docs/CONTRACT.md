@@ -75,3 +75,10 @@ Live passthrough (state exchange) + frame compositing. See `DESIGN.md`.
 - Which AoTTG2 map/scene hosts the hero (an empty custom map is likely best)
 - Whether ER enemies become AoTTG2 titans (nape-only) or ordinary hitboxes
 - Toggle key for hand-back (F8 inherited from the bridges)
+
+## Assistant combat block (added 2026-10-11)
+
+`AOER_OFF_ASSIST_COMBAT` (0x370000), `AoerCombatTable`: written by Elden Ring every frame, right after
+the entity table and with the same seqlock: for each published entity (same order and ids) its current
+animation, seconds into it, length and playback speed; the player's own, and the player's HP, FP and
+stamina. Read only by the Game Assistant (github.com/mpere056/game-assistant). Nothing reads it back.
