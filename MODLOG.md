@@ -443,3 +443,24 @@
   `Check-Assistant.bat`, `Measure-Haiku.bat`, `.tools/venv`.
 - Kept here: the bridge's assistant ray block (`AOER_OFF_ASSIST_RAYS`, `serve_ray_block()`), which
   the assistant's Elden Ring adapter uses. Its contract entry now points to the new repository.
+
+## 2026-10-11: assistant combat block (animations of everyone, the player's stamina)
+- The Game Assistant now fights for the player on request (dodging by the game's own attack timings).
+  It needs every nearby enemy's current animation each frame; the entity table has none, and reading it
+  through the debug mailbox took 7 ms per character (fine for research, too slow for combat).
+- New block AOER_OFF_ASSIST_COMBAT (0x370000, AoerCombatTable): per published entity (same order and
+  ids as the entity table) the time-act module's current animation, seconds into it, its length and
+  CSChrBehaviorModule.animation_speed; the player's own, plus HP, FP and stamina. Written with the
+  entity table's seqlock right after it each frame. Stamina/FP offsets measured on the main player's
+  CSChrDataModule through the mailbox: 0x148 fp, 0x14C max fp, 0x154 stamina, 0x158 max stamina
+  (0x138/0x13C hp were already known).
+- Built and hot-reloaded into the running game (tools/erctl.py reload, generation 1 -> 2). Live: one
+  read of the block takes 4 microseconds; player hp 673/673, fp 78/78, stamina 97/97; nearby enemies'
+  animations match their models' animation files (c4300 3026, c4440 2000).
+- The entity table, the AoTTG2/Minecraft side and the assistant ray block are unchanged.
+- 2026-10-11, later: the block now copies each character's whole time-act queue (version 2,
+  AoerAnimState 0xB8: 10 entries + write/read index + speed; table header 0xF0). Several animations
+  play at once and each frame writes an entry per animation: on a Godrick Soldier the newest entry was
+  always a 0.03 s layer animation (3043000) while its real 4 s animation (3000704) sat in the entry
+  before, so the assistant never saw its attacks. Hot-reloaded (generation 3); the assistant reads
+  every animation from it.

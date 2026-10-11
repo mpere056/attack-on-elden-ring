@@ -336,6 +336,44 @@ typedef struct ErmcEntityTable {
     ErmcEntity entities[ERMC_MAX_ENTITIES]; /* 0x10 */
 } ErmcEntityTable;
 
+/* AoER assistant: what every published entity (and the player) is doing, for the assistant's combat
+ * code: a copy of each one's CSChrTimeActModule animation queue (several animations play at once,
+ * blended or layered, and each frame writes an entry for each: the newest entry alone was a 0.03 s
+ * layer animation on a Godrick Soldier while its real one, 4 s long, sat in the entry before), plus
+ * the playback speed. Republished every frame right after the entity table, in the same order
+ * (entities[i] here is ErmcEntityTable.entities[i]; ids match). Same seqlock as the entity table. */
+#define AOER_OFF_ASSIST_COMBAT 0x370000u
+
+typedef struct AoerAnimEntry {
+    int32_t anim;                 /* animation id (aXXX_YYYYYY as XXX * 1000000 + YYYYYY), 0/-1 empty */
+    float time;                   /* seconds into it */
+    float time2;
+    float length;                 /* its length, seconds */
+} AoerAnimEntry;                  /* 0x10, = CSChrTimeActModuleAnim */
+
+typedef struct AoerAnimState {
+    uint64_t id;                  /* 0x00 ErmcEntity.id */
+    uint32_t writeIdx;            /* 0x08 next entry to be written */
+    uint32_t readIdx;             /* 0x0C newest entry written (-1/>=10 unknown) */
+    float speed;                  /* 0x10 CSChrBehaviorModule.animation_speed (1 normal), 0 unknown */
+    uint32_t valid;               /* 0x14 1 when the queue was read */
+    AoerAnimEntry queue[10];      /* 0x18 */
+} AoerAnimState;                  /* 0xB8 */
+
+typedef struct AoerCombatTable {
+    volatile uint32_t seq;        /* 0x00 seqlock: odd while writing */
+    uint32_t count;               /* 0x04 */
+    uint64_t frame;               /* 0x08 */
+    int32_t hp, maxHp;            /* 0x10 CSChrDataModule +0x138, +0x13C */
+    int32_t fp, maxFp;            /* 0x18 +0x148, +0x14C */
+    int32_t stamina, maxStamina;  /* 0x20 +0x154, +0x158 */
+    uint32_t version;             /* 0x28 2 = whole queues */
+    uint32_t pad2C;
+    AoerAnimState player;         /* 0x30 the Tarnished (id 0) */
+    uint8_t pad[0xF0 - 0x30 - 0xB8];
+    AoerAnimState entities[ERMC_MAX_ENTITIES]; /* 0xF0 */
+} AoerCombatTable;
+
 /* Minecraft -> ER: hits to apply. Single-producer ring: Minecraft writes ring[write % N]
  * then bumps `write`; ER applies entries until `read == write`. */
 #define ERMC_DAMAGE_RING 256
@@ -461,4 +499,8 @@ static_assert(sizeof(ErmcCollisionControl) == 48, "collision control size");
 static_assert(ERMC_OFF_COLLISION_CONTROL + sizeof(ErmcCollisionControl) <= ERMC_SHM_SIZE, "collision control fits");
 static_assert(ERMC_OFF_COLLISION_CONTROL + sizeof(ErmcCollisionControl) <= AOER_OFF_ASSIST_RAYS, "assistant rays after collision control");
 static_assert(AOER_OFF_ASSIST_RAYS + AOER_ASSIST_OFF_HITS + AOER_ASSIST_MAX_RAYS * 32u <= ERMC_SHM_SIZE, "assistant rays fit");
+static_assert(AOER_OFF_ASSIST_RAYS + AOER_ASSIST_OFF_HITS + AOER_ASSIST_MAX_RAYS * 32u <= AOER_OFF_ASSIST_COMBAT, "combat after assistant rays");
+static_assert(sizeof(AoerAnimState) == 0xB8, "anim state size");
+static_assert(sizeof(AoerCombatTable) == 0xF0 + 0xB8 * ERMC_MAX_ENTITIES, "combat table size");
+static_assert(AOER_OFF_ASSIST_COMBAT + sizeof(AoerCombatTable) <= ERMC_SHM_SIZE, "combat table fits");
 #endif

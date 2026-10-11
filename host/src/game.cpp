@@ -91,6 +91,12 @@ constexpr size_t kFallTimer = 0x18;           // f32 CSChrFallModule.fall_timer
 // CSChrDataModule
 constexpr size_t kDataHp = 0x138;
 constexpr size_t kDataMaxHp = 0x13C;
+// Measured 2026-10-11 through the debug mailbox on the main player: 0x138 579 hp, 0x13C 673 max,
+// 0x140 673 base max, 0x148 78 fp, 0x14C 78 max fp, 0x154 97 stamina, 0x158 97 max stamina.
+constexpr size_t kDataFp = 0x148;
+constexpr size_t kDataMaxFp = 0x14C;
+constexpr size_t kDataStamina = 0x154;
+constexpr size_t kDataMaxStamina = 0x158;
 constexpr size_t kDataFlags = 0x19B;        // bit0 NoDead
 // CSChrPhysicsModule
 constexpr size_t kPhysQuat = 0x50;
@@ -1001,6 +1007,22 @@ static uint8_t* chr_module(uint8_t* ins, size_t slot) {
     return m;
 }
 
+// For the assistant's combat block: the animation a character plays, how far in, its length, and
+// the behavior module's playback speed. Everything read through chr_module (owner-checked).
+static void anim_state(uint8_t* ins, uint64_t id, AoerAnimState* o) {
+    memset(o, 0, sizeof(*o));
+    o->id = id;
+    uint8_t* ta = chr_module(ins, kModTimeAct);
+    if (ta && mem_readable(ta + kTimeActQueue, kTimeActReadIdx + 4 - kTimeActQueue)) {
+        memcpy(o->queue, ta + kTimeActQueue, sizeof(o->queue));     // 10 x {anim, time, time2, length}
+        o->writeIdx = *(uint32_t*)(ta + kTimeActReadIdx - 4);        // write_idx (fromsoftware-rs)
+        o->readIdx = *(uint32_t*)(ta + kTimeActReadIdx);
+        o->valid = 1;
+    }
+    uint8_t* bh = chr_module(ins, kModBehavior);
+    if (bh && mem_readable(bh + kBehaviorAnimSpeed, 4)) o->speed = *(float*)(bh + kBehaviorAnimSpeed);
+}
+
 // The animation the character is playing (time-act module's current queue entry), or -1.
 static int32_t current_anim(uint8_t* ins) {
     uint8_t* ta = chr_module(ins, kModTimeAct);
@@ -1429,6 +1451,7 @@ static void publish_entities(const Player& p) {
     ErmcEntityTable* t = shm_entities();
     static ErmcEntity local[ERMC_MAX_ENTITIES];
     static Published pub[ERMC_MAX_ENTITIES];
+    static AoerAnimState anims[ERMC_MAX_ENTITIES];  // the assistant's combat block, same order
     uint32_t n = 0;
     g_nearestHostile.valid = false;
     float nearestSq = 1e30f;
@@ -1497,6 +1520,7 @@ static void publish_entities(const Player& p) {
             g_nearestHostile.handle = o.id;
         }
         pub[n] = {o.id, c.ins};
+        anim_state(c.ins, o.id, &anims[n]);
         n++;
     }
     t->seq = t->seq | 1;
@@ -1508,6 +1532,23 @@ static void publish_entities(const Player& p) {
     t->seq = (t->seq | 1) + 1;
     memcpy(g_published, pub, sizeof(Published) * n);
     g_publishedCount = n;
+    // The assistant's combat block: every entity's animation (same order), the player's, and the
+    // player's HP, FP and stamina.
+    AoerCombatTable* ct = shm_assist_combat();
+    ct->seq = ct->seq | 1;
+    __asm__ __volatile__("" ::: "memory");
+    memcpy(ct->entities, anims, sizeof(AoerAnimState) * n);
+    ct->count = n;
+    anim_state(p.ins, 0, &ct->player);
+    if (p.data && mem_readable(p.data + kDataHp, 0x24)) {
+        ct->hp = *(int32_t*)(p.data + kDataHp), ct->maxHp = *(int32_t*)(p.data + kDataMaxHp);
+        ct->fp = *(int32_t*)(p.data + kDataFp), ct->maxFp = *(int32_t*)(p.data + kDataMaxFp);
+        ct->stamina = *(int32_t*)(p.data + kDataStamina), ct->maxStamina = *(int32_t*)(p.data + kDataMaxStamina);
+    }
+    ct->version = 2;
+    ct->frame = shm_state()->frame;
+    __asm__ __volatile__("" ::: "memory");
+    ct->seq = (ct->seq | 1) + 1;
 }
 
 static bool published_attacker(uint64_t handle, float* pos, uint32_t* kind) {
